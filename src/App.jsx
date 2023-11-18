@@ -8,7 +8,17 @@ import { AnimationMixer } from 'three'
 
 export const useStore = create(() => ({
   groundObjects: {},
-  actions: {},
+  actions: {
+    shoot: () => {
+      set((state) => ({ lasers: [...state.lasers, Date.now()] }))
+      // Implement logic for firing lasers
+    }
+    //toggleSound: (sound) => {
+    // Implement logic for toggling sound
+    //}
+    // ... Other existing actions
+  },
+  lasers: [], // New state for storing laser shots
   mixer: new AnimationMixer()
 }))
 
@@ -17,7 +27,7 @@ function Loader() {
   return <Html center>{progress} % loaded</Html>
 }
 
-export default function App() {
+export default function App({ socket }) {
   return (
     <>
       <Canvas shadows onPointerDown={(e) => e.target.requestPointerLock()}>
@@ -26,7 +36,7 @@ export default function App() {
           <spotLight position={[2.5, 5, 5]} angle={Math.PI / 3} penumbra={0.5} castShadow shadow-mapSize-height={2048} shadow-mapSize-width={2048} intensity={Math.PI * 25} />
           <spotLight position={[-2.5, 5, 5]} angle={Math.PI / 3} penumbra={0.5} castShadow shadow-mapSize-height={2048} shadow-mapSize-width={2048} intensity={Math.PI * 25} />
           <Physics>
-            <Game />
+            <Game socket={socket} />
           </Physics>
           <gridHelper />
           <Stats />

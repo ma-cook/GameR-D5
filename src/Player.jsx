@@ -1,7 +1,7 @@
-import { Suspense, useMemo, useRef, useEffect } from 'react'
+import { Suspense, useMemo, useRef, useEffect, useState } from 'react'
 import { Vector3, Euler, Quaternion, Matrix4, Raycaster, SphereGeometry, MeshBasicMaterial, Mesh } from 'three'
 import Eve from './Eve'
-import { useCompoundBody } from '@react-three/cannon'
+import { useCompoundBody, useSphere } from '@react-three/cannon'
 import useKeyboard from './useKeyboard'
 import { useFrame, useThree } from '@react-three/fiber'
 import { Vec3 } from 'cannon-es'
@@ -32,10 +32,26 @@ export default function Player({ position }) {
   const { groundObjects, actions, mixer, setTime, setFinished } = useStore((state) => state)
   const reticule = useRef() // Ref for the reticule mesh
   const raycaster = useMemo(() => new Raycaster(), [])
+  const lasers = useStore((state) => state.lasers)
+  const laserGroup = useRef()
 
   const containerGroup = useRef()
 
-  const { camera } = useThree()
+  const { camera, scene } = useThree()
+
+  const [isRightMouseDown, setRightMouseDown] = useState(false)
+
+  const handleMouseDown = (event) => {
+    if (event.button === 2) {
+      setRightMouseDown(true)
+    }
+  }
+
+  const handleMouseUp = (event) => {
+    if (event.button === 2) {
+      setRightMouseDown(false)
+    }
+  }
 
   useEffect(() => {
     document.addEventListener('mousemove', updateMouseMovement)
@@ -43,6 +59,31 @@ export default function Player({ position }) {
       document.removeEventListener('mousemove', updateMouseMovement)
     }
   }, [updateMouseMovement])
+
+  const shootLasers = () => {
+    // Create lasers and set their positions
+    const laserGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.5)
+    const laserMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+    const laserMesh = new THREE.Mesh(laserGeometry, laserMaterial)
+    laserMesh.position.set(secondGroup.current.position.x, secondGroup.current.position.y + 1, secondGroup.current.position.z)
+    laserMesh.quaternion.copy(secondGroup.current.quaternion)
+
+    // Add the lasers to the scene
+    laserGroup.current.add(laserMesh)
+
+    // Add the lasers to the state for later reference
+    lasers.push(laserMesh)
+  }
+
+  useEffect(() => {
+    document.addEventListener('mousedown', handleMouseDown)
+    document.addEventListener('mouseup', handleMouseUp)
+
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [])
 
   // Create the reticule mesh
   useEffect(() => {
@@ -55,8 +96,7 @@ export default function Player({ position }) {
       containerGroup.current.remove(mesh) // Remove the reticule when the component unmounts
     }
   }, [])
-
-  useFrame(() => {
+  useFrame(({ raycaster }, delta) => {
     // Update the raycaster based on the mouse position
     raycaster.setFromCamera({ x: 0, y: 0 }, camera)
 
@@ -67,9 +107,16 @@ export default function Player({ position }) {
       // If there is an intersection, update the reticule's position
       const intersection = intersects[0]
       reticule.current.position.copy(intersection.point)
+    } else {
+      // If there is no intersection, gradually move the reticule towards the default position
+
+      const defaultPosition = new Vector3(0, 0, -50) // Adjust the distance as needed
+      defaultPosition.applyMatrix4(camera.matrixWorld)
+      reticule.current.position.lerp(defaultPosition, 0.1) // Adjust the lerp factor as needed
     }
   })
 
+  //Player body
   const [ref, body] = useCompoundBody(
     () => ({
       mass: 1,
@@ -107,11 +154,27 @@ export default function Player({ position }) {
     // Convert euler angles to quaternion
     gaze.setFromEuler(euler)
 
-    console.log(euler.x)
     secondGroup.current.setRotationFromQuaternion(gaze)
   }
 
   useFrame(({ raycaster }, delta) => {
+    lasers.forEach((laser) => {
+      // Assuming lasers have a property like 'direction' that indicates their movement direction
+      const laserDirection = new Vector3(0, 0, 1).applyQuaternion(laser.quaternion)
+      laser.position.add(laserDirection.clone().multiplyScalar(100 * delta)) // Adjust the speed as needed
+
+      // You may also want to remove lasers that are too far from the player
+      if (laser.position.distanceTo(group.current.position) > 100) {
+        laserGroup.current.remove(laser)
+        // Remove the laser from the state as well
+        lasers.splice(lasers.indexOf(laser), 1)
+      }
+    })
+
+    if (isRightMouseDown) {
+      shootLasers()
+    }
+
     let activeAction = 0 // 0:idle, 1:walking, 2:jumping
     body.angularFactor.set(0, 0, 0)
 
@@ -136,6 +199,9 @@ export default function Player({ position }) {
 
     if (document.pointerLockElement) {
       updateSecondGroupQuaternion()
+
+      // Make the Torso look at the mouse coordinates
+      secondGroup.current.lookAt(reticule.current.position)
     }
 
     rotationMatrix.lookAt(worldPosition, group.current.position, group.current.up)
@@ -233,6 +299,8 @@ export default function Player({ position }) {
           <Torso />
         </Suspense>
       </group>
+
+      <group ref={laserGroup}></group>
     </group>
   )
 }
