@@ -5,6 +5,10 @@ import { Physics } from '@react-three/cannon'
 import { Suspense } from 'react'
 import { create } from 'zustand'
 import { AnimationMixer } from 'three'
+import React, { useState, useEffect, useRef } from 'react'
+import { io } from 'socket.io-client'
+
+import './App.css'
 
 export const useStore = create(() => ({
   groundObjects: {},
@@ -27,31 +31,55 @@ function Loader() {
   return <Html center>{progress} % loaded</Html>
 }
 
-export default function App({ socket }) {
+export default function App() {
+  const socketClient = useRef(null)
+  const cameraRef = useRef()
+  const [clients, setClients] = useState({})
+
+  useEffect(() => {
+    // On mount initialize the socket connection
+    socketClient.current = io()
+
+    // Dispose gracefully
+    return () => {
+      if (socketClient.current) socketClient.current.disconnect()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (socketClient.current) {
+      socketClient.current.on('move', (clients) => {
+        setClients(clients)
+      })
+    }
+  }, [])
+
   return (
-    <>
-      <Canvas shadows onPointerDown={(e) => e.target.requestPointerLock()}>
-        <Suspense fallback={<Loader />}>
-          <ambientLight />
-          <spotLight position={[2.5, 5, 5]} angle={Math.PI / 3} penumbra={0.5} castShadow shadow-mapSize-height={2048} shadow-mapSize-width={2048} intensity={Math.PI * 25} />
-          <spotLight position={[-2.5, 5, 5]} angle={Math.PI / 3} penumbra={0.5} castShadow shadow-mapSize-height={2048} shadow-mapSize-width={2048} intensity={Math.PI * 25} />
-          <Physics>
-            <Game socket={socket} />
-          </Physics>
-          <gridHelper />
-          <Stats />
-        </Suspense>
-      </Canvas>
-      <div id="instructions">
-        WASD to move
-        <br />
-        SPACE to jump.
-        <br />
-        Model from{' '}
-        <a href="https://www.mixamo.com" target="_blank" rel="nofollow noreferrer">
-          Mixamo
-        </a>
-      </div>
-    </>
+    socketClient.current && (
+      <>
+        <Canvas shadows onPointerDown={(e) => e.target.requestPointerLock()}>
+          <Suspense fallback={<Loader />}>
+            <ambientLight />
+            <spotLight position={[2.5, 5, 5]} angle={Math.PI / 3} penumbra={0.5} castShadow shadow-mapSize-height={2048} shadow-mapSize-width={2048} intensity={Math.PI * 25} />
+            <spotLight position={[-2.5, 5, 5]} angle={Math.PI / 3} penumbra={0.5} castShadow shadow-mapSize-height={2048} shadow-mapSize-width={2048} intensity={Math.PI * 25} />
+            <Physics>
+              <Game clients={clients} socketClient={socketClient} />
+            </Physics>
+            <gridHelper />
+            <Stats />
+          </Suspense>
+        </Canvas>
+        <div id="instructions">
+          WASD to move
+          <br />
+          SPACE to jump.
+          <br />
+          Model from{' '}
+          <a href="https://www.mixamo.com" target="_blank" rel="nofollow noreferrer">
+            Mixamo
+          </a>
+        </div>
+      </>
+    )
   )
 }

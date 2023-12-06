@@ -1,2 +1,2 @@
 # Arma2
-Created with CodeSandbox
+nodemon server.js to start

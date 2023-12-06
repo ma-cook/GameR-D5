@@ -1,64 +1,44 @@
-import { Suspense, useMemo, useRef, useEffect, useState } from 'react'
-import { Vector3, Euler, Quaternion, Matrix4, Raycaster, SphereGeometry, MeshBasicMaterial, Mesh } from 'three'
-import Eve from './Eve'
-import { useCompoundBody, useSphere } from '@react-three/cannon'
-import useKeyboard from './useKeyboard'
+import React, { Suspense, useMemo, useRef, useEffect, useState } from 'react'
+import { Vector3, Euler, Quaternion, Matrix4, Raycaster, SphereGeometry, MeshBasicMaterial, Mesh, BoxGeometry, Object3D } from 'three'
+import { useCompoundBody } from '@react-three/cannon'
 import { useFrame, useThree } from '@react-three/fiber'
+import { Text } from '@react-three/drei'
 import { Vec3 } from 'cannon-es'
-import useFollowCam from './useFollowCam'
-import { useStore } from './App'
+import Eve from './Eve'
 import Torso from './Torso'
+import useFollowCam from './useFollowCam'
+import useKeyboard from './useKeyboard'
+import { useStore } from './App'
 import * as THREE from 'three'
-import { Object3D } from 'three'
+import useMouse from './useMouse'
 
-export default function Player({ position }) {
+export default function Player({ secondGroupRef, id, position, rotation, socket, torsoPosition, torsoRotation, reticulePosition, socketClient }) {
+  const { isRightMouseDown, mouseMovement } = useMouse()
+  const isLocalPlayer = useRef(id == socketClient.current.id)
   const playerGrounded = useRef(false)
   const inJumpAction = useRef(false)
   const group = useRef()
-  const { yaw, pitch, secondGroup, updateMouseMovement } = useFollowCam(group, [0, 1, 1.5])
+  const shouldListen = isLocalPlayer.current
+  let pivot, alt, yaw, pitch, secondGroup, updateMouseMovement
+  if (isLocalPlayer) {
+    ;({ pivot, alt, yaw, pitch, secondGroup, updateMouseMovement } = useFollowCam(group, [0, 1, 1.5], isLocalPlayer.current))
+  }
   const velocity = useMemo(() => new Vector3(), [])
   const inputVelocity = useMemo(() => new Vector3(), [])
   const euler = useMemo(() => new Euler(), [])
   const quat = useMemo(() => new Quaternion(), [])
-  const targetQuaternion = useMemo(() => new Quaternion(), [])
   const worldPosition = useMemo(() => new Vector3(), [])
   const raycasterOffset = useMemo(() => new Vector3(), [])
   const contactNormal = useMemo(() => new Vec3(0, 0, 0), [])
   const down = useMemo(() => new Vec3(0, -1, 0), [])
-  const rotationMatrix = useMemo(() => new Matrix4(), [])
   const prevActiveAction = useRef(0) // 0:idle, 1:walking, 2:jumping
-  const keyboard = useKeyboard()
-  const secondGroupPosition = useMemo(() => new Vector3(), [])
+  const keyboard = useKeyboard(shouldListen, isLocalPlayer.current)
   const { groundObjects, actions, mixer, setTime, setFinished } = useStore((state) => state)
   const reticule = useRef() // Ref for the reticule mesh
-  const raycaster = useMemo(() => new Raycaster(), [])
   const lasers = useStore((state) => state.lasers)
   const laserGroup = useRef()
-
   const containerGroup = useRef()
-
-  const { camera, scene } = useThree()
-
-  const [isRightMouseDown, setRightMouseDown] = useState(false)
-
-  const handleMouseDown = (event) => {
-    if (event.button === 2) {
-      setRightMouseDown(true)
-    }
-  }
-
-  const handleMouseUp = (event) => {
-    if (event.button === 2) {
-      setRightMouseDown(false)
-    }
-  }
-
-  useEffect(() => {
-    document.addEventListener('mousemove', updateMouseMovement)
-    return () => {
-      document.removeEventListener('mousemove', updateMouseMovement)
-    }
-  }, [updateMouseMovement])
+  const { camera } = useThree()
 
   const shootLasers = () => {
     // Create lasers and set their positions
@@ -73,15 +53,31 @@ export default function Player({ position }) {
 
     // Add the lasers to the state for later reference
     lasers.push(laserMesh)
+
+    const laserData = {
+      id: socketClient.current.id,
+      position: laserMesh.position.toArray(),
+      quaternion: laserMesh.quaternion.toArray()
+    }
+    socket.emit('laser', laserData)
   }
 
   useEffect(() => {
-    document.addEventListener('mousedown', handleMouseDown)
-    document.addEventListener('mouseup', handleMouseUp)
+    socket.on('laser', (laserData) => {
+      // Create a new laser with the received data
+      const laserGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.5)
+      const laserMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+      const laserMesh = new THREE.Mesh(laserGeometry, laserMaterial)
+      laserMesh.position.fromArray(laserData.position)
+      laserMesh.quaternion.fromArray(laserData.quaternion)
+
+      // Add the laser to the scene and the state
+      laserGroup.current.add(laserMesh)
+      lasers.push(laserMesh)
+    })
 
     return () => {
-      document.removeEventListener('mousedown', handleMouseDown)
-      document.removeEventListener('mouseup', handleMouseUp)
+      socket.off('laser')
     }
   }, [])
 
@@ -93,9 +89,12 @@ export default function Player({ position }) {
     reticule.current = mesh
     containerGroup.current.add(mesh) // Add the reticule to the group
     return () => {
-      containerGroup.current.remove(mesh) // Remove the reticule when the component unmounts
+      if (mesh !== null && containerGroup.current !== null) {
+        containerGroup.current.remove(mesh) // Remove the reticule when the component unmounts
+      }
     }
   }, [])
+
   useFrame(({ raycaster }, delta) => {
     // Update the raycaster based on the mouse position
     raycaster.setFromCamera({ x: 0, y: 0 }, camera)
@@ -112,7 +111,7 @@ export default function Player({ position }) {
 
       const defaultPosition = new Vector3(0, 0, -50) // Adjust the distance as needed
       defaultPosition.applyMatrix4(camera.matrixWorld)
-      reticule.current.position.lerp(defaultPosition, 0.1) // Adjust the lerp factor as needed
+      reticule.current.position.lerp(defaultPosition, 0.6) // Adjust the lerp factor as needed
     }
   })
 
@@ -160,7 +159,7 @@ export default function Player({ position }) {
   useFrame(({ raycaster }, delta) => {
     lasers.forEach((laser) => {
       // Assuming lasers have a property like 'direction' that indicates their movement direction
-      const laserDirection = new Vector3(0, 0, 1).applyQuaternion(laser.quaternion)
+      const laserDirection = new Vector3(0, 0, -1).applyQuaternion(laser.quaternion)
       laser.position.add(laserDirection.clone().multiplyScalar(100 * delta)) // Adjust the speed as needed
 
       // You may also want to remove lasers that are too far from the player
@@ -171,10 +170,10 @@ export default function Player({ position }) {
       }
     })
 
-    if (isRightMouseDown) {
+    if (isLocalPlayer.current && isRightMouseDown) {
       shootLasers()
     }
-
+    false
     let activeAction = 0 // 0:idle, 1:walking, 2:jumping
     body.angularFactor.set(0, 0, 0)
 
@@ -197,23 +196,6 @@ export default function Player({ position }) {
 
     const distance = worldPosition.distanceTo(group.current.position)
 
-    if (document.pointerLockElement) {
-      updateSecondGroupQuaternion()
-
-      // Make the Torso look at the mouse coordinates
-      secondGroup.current.lookAt(reticule.current.position)
-    }
-
-    rotationMatrix.lookAt(worldPosition, group.current.position, group.current.up)
-
-    targetQuaternion.setFromRotationMatrix(rotationMatrix)
-    if (distance > 0.0001 && !group.current.quaternion.equals(targetQuaternion)) {
-      targetQuaternion.z = 0
-      targetQuaternion.x = 0
-      targetQuaternion.normalize()
-      group.current.quaternion.rotateTowards(targetQuaternion, delta * 6)
-    }
-
     inputVelocity.set(0, 0, 0)
     if (playerGrounded.current) {
       // if grounded I can walk
@@ -233,7 +215,7 @@ export default function Player({ position }) {
         activeAction = 1
         inputVelocity.x = 40 * delta
       }
-      inputVelocity.setLength(0.7) // clamps walking speed
+      inputVelocity.setLength(1.1) // clamps walking speed
 
       if (activeAction !== prevActiveAction.current) {
         if (prevActiveAction.current !== 1 && activeAction === 1) {
@@ -280,23 +262,65 @@ export default function Player({ position }) {
       setTime(0)
     }
 
-    group.current.position.lerp(worldPosition, 0.9)
-    secondGroup.current.position.lerp(worldPosition, 0.9)
+    if (secondGroup.current) {
+      secondGroup.current.position.set(group.current.position.x, group.current.position.y, group.current.position.z)
+    }
+
+    if (document.pointerLockElement) {
+      // Make the Torso look at the mouse coordinates
+      updateSecondGroupQuaternion()
+    }
+
+    if (isLocalPlayer.current) {
+      // Only update position when the player is moving
+      group.current.position.lerp(worldPosition, 0.9)
+
+      if (secondGroup.current && secondGroup.current.position) {
+        const pivotObject = new THREE.Object3D()
+        const direction = new THREE.Vector3()
+        direction.subVectors(worldPosition, group.current.position).normalize()
+
+        // Make the player face the target
+        group.current.lookAt(group.current.position.clone().add(direction))
+        pivotObject.add(camera)
+
+        // Update the pivot object's position when the secondGroup's position is updated
+        pivotObject.position.copy(secondGroup.current.position)
+        pivotObject.position.y += 1.5
+        // Rotate the pivot object instead of the camera
+        pivotObject.rotation.copy(secondGroup.current.rotation)
+      }
+    }
+
+    if (isLocalPlayer.current) {
+      const playerData = {
+        id: socketClient.current.id,
+        position: group.current.position.toArray(),
+        rotation: group.current.rotation.toArray(),
+        torsoPosition: secondGroup.current.position.toArray(),
+        torsoRotation: secondGroup.current.rotation.toArray()
+      }
+
+      socket.emit('move', playerData)
+    }
   })
 
   return (
-    <group ref={containerGroup} position={position}>
+    <group ref={containerGroup}>
       {/* First Eve component */}
-      <group ref={(groupRef) => (group.current = groupRef)} position={position}>
+      <group ref={(groupRef) => (group.current = groupRef)} position={position} rotation={rotation}>
         <Suspense fallback={null}>
           <Eve />
         </Suspense>
       </group>
 
       {/* Second Eve component */}
-      <group ref={(secondGroupRef) => (secondGroup.current = secondGroupRef)} position={secondGroupPosition}>
+      <group ref={(secondGroupRef) => (secondGroup.current = secondGroupRef)} position={torsoPosition} rotation={torsoRotation}>
         <Suspense fallback={null}>
           <Torso />
+          <Text position={[0, 2.0, 0]} color="white" anchorX="center" anchorY="middle">
+            {id}
+          </Text>
         </Suspense>
       </group>
 

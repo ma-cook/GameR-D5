@@ -13,9 +13,7 @@ function ToggleDebug({ children }) {
   return <>{debugRendererVisible.visible ? <Debug color={0x008800}>{children}</Debug> : <>{children}</>}</>
 }
 
-export default function Game({ socket }) {
-  const socketClient = useRef(null)
-  const [clients, setClients] = useState({})
+export default function Game({ clients, socketClient }) {
   useContactMaterial('ground', 'slippery', {
     friction: 0,
     restitution: 0.3,
@@ -23,30 +21,30 @@ export default function Game({ socket }) {
     contactEquationRelaxation: 3
   })
 
-  useEffect(() => {
-    // On mount initialize the socket connection
-    socketClient.current = io()
-
-    // Dispose gracefully
-    return () => {
-      if (socketClient.current) socketClient.current.disconnect()
-    }
-  }, [])
-
-  useEffect(() => {
-    if (socketClient.current) {
-      socketClient.current.on('move', (clients) => {
-        setClients(clients)
-      })
-    }
-  }, [])
+  const socket = socketClient.current
 
   return (
     <>
       <ToggleDebug>
         <Floor />
         <Box />
-        <Player position={[0, 1, 0]} socket={socket} />
+        {Object.values(clients).map((clientData, index) => {
+          const { id, position, rotation, torsoPosition, torsoRotation, reticulePosition } = clientData
+
+          return (
+            <Player
+              id={id}
+              key={index}
+              position={position}
+              rotation={rotation}
+              socket={socket}
+              torsoPosition={torsoPosition}
+              torsoRotation={torsoRotation}
+              reticulePosition={reticulePosition}
+              socketClient={socketClient}
+            />
+          )
+        })}
       </ToggleDebug>
     </>
   )

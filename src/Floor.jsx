@@ -3,6 +3,7 @@ import { usePlane } from '@react-three/cannon'
 import { useLoader } from '@react-three/fiber'
 import { TextureLoader } from 'three'
 import { useStore } from './App'
+import React from 'react'
 
 export default function Floor() {
   const [ref] = usePlane(() => ({ rotation: [-Math.PI / 2, 0, 0], material: 'ground' }), useRef())
