@@ -42,7 +42,7 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
 
   const shootLasers = () => {
     // Create lasers and set their positions
-    const laserGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.5)
+    const laserGeometry = new THREE.BoxGeometry(0.05, 0.05, 0.2)
     const laserMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 })
     const laserMesh = new THREE.Mesh(laserGeometry, laserMaterial)
     laserMesh.position.set(secondGroup.current.position.x, secondGroup.current.position.y + 1, secondGroup.current.position.z)
@@ -65,7 +65,7 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
   useEffect(() => {
     socket.on('laser', (laserData) => {
       // Create a new laser with the received data
-      const laserGeometry = new THREE.BoxGeometry(0.1, 0.1, 0.5)
+      const laserGeometry = new THREE.BoxGeometry(0.05, 0.05, 0.2)
       const laserMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 })
       const laserMesh = new THREE.Mesh(laserGeometry, laserMaterial)
       laserMesh.position.fromArray(laserData.position)
@@ -127,6 +127,11 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
       onCollide: (e) => {
         if (e.contact.bi.id !== e.body.id) {
           contactNormal.set(...e.contact.ni)
+          console.log(body.position)
+          body.position.subscribe((newPosition) => {
+            // newPosition is an array [x, y, z]
+            console.log(newPosition)
+          })
         }
         if (contactNormal.dot(down) > 0.5) {
           if (inJumpAction.current) {
@@ -138,8 +143,10 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
       },
       material: 'slippery',
       linearDamping: 0,
-      position: position
+      position: position,
+      allowSleep: true
     }),
+
     useRef()
   )
 
@@ -257,8 +264,7 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
       body.velocity.set(0, 0, 0)
       body.position.set(0, 1, 0)
       group.current.position.set(0, 1, 0)
-
-      setFinished(false)
+      body.applyImpulse([velocity.x, velocity.y, velocity.z], [0, 0, 0]).setFinished(false)
       setTime(0)
     }
 
@@ -273,6 +279,7 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
 
     if (isLocalPlayer.current) {
       // Only update position when the player is moving
+
       group.current.position.lerp(worldPosition, 0.9)
 
       if (secondGroup.current && secondGroup.current.position) {
@@ -298,9 +305,9 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
         position: group.current.position.toArray(),
         rotation: group.current.rotation.toArray(),
         torsoPosition: secondGroup.current.position.toArray(),
-        torsoRotation: secondGroup.current.rotation.toArray()
+        torsoRotation: secondGroup.current.rotation.toArray(),
+        bodyPosition: [body.position.x, body.position.y, body.position.z]
       }
-
       socket.emit('move', playerData)
     }
   })

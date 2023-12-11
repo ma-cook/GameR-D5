@@ -58,13 +58,16 @@ ioServer.on('connection', (client) => {
 
   ioServer.sockets.emit('move', clients)
 
-  client.on('move', ({ id, rotation, position, torsoPosition, torsoRotation }) => {
-    clients[id].position = position
-    clients[id].rotation = rotation
-    clients[id].torsoPosition = torsoPosition
-    clients[id].torsoRotation = torsoRotation
-
-    ioServer.sockets.emit('move', clients)
+  client.on('move', ({ id, rotation, position, torsoPosition, torsoRotation, bodyPosition }) => {
+    if (clients[id]) {
+      clients[id].position = position
+      clients[id].rotation = rotation
+      clients[id].torsoPosition = torsoPosition
+      clients[id].torsoRotation = torsoRotation
+      clients[id].bodyPosition = bodyPosition
+      console.log(clients[id].bodyPosition)
+      ioServer.sockets.emit('move', clients)
+    }
   })
 
   client.on('laser', (laserData) => {
