@@ -13,6 +13,8 @@ import * as THREE from 'three'
 import useMouse from './useMouse'
 
 export default function Player({ secondGroupRef, id, position, rotation, socket, torsoPosition, torsoRotation, reticulePosition, socketClient }) {
+  const direction = new THREE.Vector3()
+  const pivotObject = new THREE.Object3D()
   const { isRightMouseDown, mouseMovement } = useMouse()
   const isLocalPlayer = useRef(id == socketClient.current.id)
   const playerGrounded = useRef(false)
@@ -128,10 +130,6 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
         if (e.contact.bi.id !== e.body.id) {
           contactNormal.set(...e.contact.ni)
           console.log(body.position)
-          body.position.subscribe((newPosition) => {
-            // newPosition is an array [x, y, z]
-            console.log(newPosition)
-          })
         }
         if (contactNormal.dot(down) > 0.5) {
           if (inJumpAction.current) {
@@ -149,6 +147,17 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
 
     useRef()
   )
+
+  useEffect(() => {
+    const subscription = body.position.subscribe((newPosition) => {
+      // newPosition is an array [x, y, z]
+      console.log(newPosition)
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [body])
 
   const updateSecondGroupQuaternion = () => {
     // Assuming yaw.rotation is the mouse movement data
@@ -283,8 +292,6 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
       group.current.position.lerp(worldPosition, 0.9)
 
       if (secondGroup.current && secondGroup.current.position) {
-        const pivotObject = new THREE.Object3D()
-        const direction = new THREE.Vector3()
         direction.subVectors(worldPosition, group.current.position).normalize()
 
         // Make the player face the target
