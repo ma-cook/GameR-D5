@@ -65,7 +65,6 @@ ioServer.on('connection', (client) => {
       clients[id].torsoPosition = torsoPosition
       clients[id].torsoRotation = torsoRotation
       clients[id].bodyPosition = bodyPosition
-      console.log(clients[id].bodyPosition)
       ioServer.sockets.emit('move', clients)
     }
   })

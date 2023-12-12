@@ -11,8 +11,11 @@ import useKeyboard from './useKeyboard'
 import { useStore } from './App'
 import * as THREE from 'three'
 import useMouse from './useMouse'
+import { createLaser } from './laser'
+import { useLaserListener } from './useLaserListener'
 
 export default function Player({ secondGroupRef, id, position, rotation, socket, torsoPosition, torsoRotation, reticulePosition, socketClient }) {
+  const newPosition = useRef([0, 0, 0])
   const direction = new THREE.Vector3()
   const pivotObject = new THREE.Object3D()
   const { isRightMouseDown, mouseMovement } = useMouse()
@@ -43,45 +46,10 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
   const { camera } = useThree()
 
   const shootLasers = () => {
-    // Create lasers and set their positions
-    const laserGeometry = new THREE.BoxGeometry(0.05, 0.05, 0.2)
-    const laserMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 })
-    const laserMesh = new THREE.Mesh(laserGeometry, laserMaterial)
-    laserMesh.position.set(secondGroup.current.position.x, secondGroup.current.position.y + 1, secondGroup.current.position.z)
-    laserMesh.quaternion.copy(secondGroup.current.quaternion)
-
-    // Add the lasers to the scene
-    laserGroup.current.add(laserMesh)
-
-    // Add the lasers to the state for later reference
-    lasers.push(laserMesh)
-
-    const laserData = {
-      id: socketClient.current.id,
-      position: laserMesh.position.toArray(),
-      quaternion: laserMesh.quaternion.toArray()
-    }
-    socket.emit('laser', laserData)
+    createLaser(secondGroup, laserGroup, lasers, socket, socketClient)
   }
 
-  useEffect(() => {
-    socket.on('laser', (laserData) => {
-      // Create a new laser with the received data
-      const laserGeometry = new THREE.BoxGeometry(0.05, 0.05, 0.2)
-      const laserMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 })
-      const laserMesh = new THREE.Mesh(laserGeometry, laserMaterial)
-      laserMesh.position.fromArray(laserData.position)
-      laserMesh.quaternion.fromArray(laserData.quaternion)
-
-      // Add the laser to the scene and the state
-      laserGroup.current.add(laserMesh)
-      lasers.push(laserMesh)
-    })
-
-    return () => {
-      socket.off('laser')
-    }
-  }, [])
+  useLaserListener(socket, laserGroup, lasers)
 
   // Create the reticule mesh
   useEffect(() => {
@@ -118,7 +86,7 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
   })
 
   //Player body
-  const [ref, body] = useCompoundBody(
+  const [ref, body, api] = useCompoundBody(
     () => ({
       mass: 1,
       shapes: [
@@ -129,7 +97,6 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
       onCollide: (e) => {
         if (e.contact.bi.id !== e.body.id) {
           contactNormal.set(...e.contact.ni)
-          console.log(body.position)
         }
         if (contactNormal.dot(down) > 0.5) {
           if (inJumpAction.current) {
@@ -149,9 +116,8 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
   )
 
   useEffect(() => {
-    const subscription = body.position.subscribe((newPosition) => {
-      // newPosition is an array [x, y, z]
-      console.log(newPosition)
+    const subscription = body.position.subscribe((position) => {
+      newPosition.current = position
     })
 
     return () => {
@@ -305,7 +271,7 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
         pivotObject.rotation.copy(secondGroup.current.rotation)
       }
     }
-
+    console.log(newPosition.current)
     if (isLocalPlayer.current) {
       const playerData = {
         id: socketClient.current.id,

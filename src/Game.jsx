@@ -29,7 +29,7 @@ export default function Game({ clients, socketClient }) {
         <Floor />
         <Box />
         {Object.values(clients).map((clientData, index) => {
-          const { id, position, rotation, torsoPosition, torsoRotation, reticulePosition, bodyPosition } = clientData
+          const { id, position, rotation, torsoPosition, torsoRotation, reticulePosition } = clientData
 
           return (
             <Player
@@ -41,7 +41,6 @@ export default function Game({ clients, socketClient }) {
               torsoPosition={torsoPosition}
               torsoRotation={torsoRotation}
               reticulePosition={reticulePosition}
-              bodyPosition={bodyPosition}
               socketClient={socketClient}
             />
           )
