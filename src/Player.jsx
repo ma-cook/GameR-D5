@@ -34,7 +34,7 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
   const quat = useMemo(() => new Quaternion(), [])
   const worldPosition = useMemo(() => new Vector3(), [])
   const raycasterOffset = useMemo(() => new Vector3(), [])
-  const contactNormal = useMemo(() => new Vec3(0, 0, 0), [])
+  const contactNormal = useMemo(() => new Vector3(0, 0, 0), [])
   const down = useMemo(() => new Vec3(0, -1, 0), [])
   const prevActiveAction = useRef(0) // 0:idle, 1:walking, 2:jumping
   const keyboard = useKeyboard(shouldListen, isLocalPlayer.current)
@@ -86,7 +86,7 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
   })
 
   //Player body
-  const [ref, body, api] = useCompoundBody(
+  const [ref, body] = useCompoundBody(
     () => ({
       mass: 1,
       shapes: [
@@ -116,14 +116,22 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
   )
 
   useEffect(() => {
-    const subscription = body.position.subscribe((position) => {
-      newPosition.current = position
+    const subscription = body.position.subscribe((bodyPosition) => {
+      newPosition.current = bodyPosition
     })
 
     return () => {
-      subscription.unsubscribe()
+      subscription()
     }
   }, [body])
+
+  useEffect(() => {
+    // Create a new Vector3 with the new position
+    const newPosition = new Vector3(...position)
+
+    // Copy the new position to the body's position
+    body.position.copy(newPosition)
+  }, [position, body])
 
   const updateSecondGroupQuaternion = () => {
     // Assuming yaw.rotation is the mouse movement data
@@ -238,7 +246,7 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
     if (worldPosition.y < -3) {
       body.velocity.set(0, 0, 0)
       body.position.set(0, 1, 0)
-      group.current.position.set(0, 1, 0)
+
       body.applyImpulse([velocity.x, velocity.y, velocity.z], [0, 0, 0]).setFinished(false)
       setTime(0)
     }
@@ -252,10 +260,21 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
       updateSecondGroupQuaternion()
     }
 
+    socket.on('move', (data) => {
+      // Update worldPosition with the new position data
+      if (data.position && Symbol.iterator in Object(data.position)) {
+        // Update worldPosition with the new position data
+        console.log(data)
+        worldPosition.set(...data.position)
+        if (data.id !== socketClient.current.id) {
+          // Update the mesh's position
+          group.current.position.set(...data.position)
+        }
+      }
+    })
+
     if (isLocalPlayer.current) {
       // Only update position when the player is moving
-
-      group.current.position.lerp(worldPosition, 0.9)
 
       if (secondGroup.current && secondGroup.current.position) {
         direction.subVectors(worldPosition, group.current.position).normalize()
@@ -271,15 +290,14 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
         pivotObject.rotation.copy(secondGroup.current.rotation)
       }
     }
-    console.log(newPosition.current)
+
     if (isLocalPlayer.current) {
       const playerData = {
         id: socketClient.current.id,
-        position: group.current.position.toArray(),
+        position: newPosition.current,
         rotation: group.current.rotation.toArray(),
         torsoPosition: secondGroup.current.position.toArray(),
-        torsoRotation: secondGroup.current.rotation.toArray(),
-        bodyPosition: [body.position.x, body.position.y, body.position.z]
+        torsoRotation: secondGroup.current.rotation.toArray()
       }
       socket.emit('move', playerData)
     }

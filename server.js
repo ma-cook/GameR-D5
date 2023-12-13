@@ -58,13 +58,13 @@ ioServer.on('connection', (client) => {
 
   ioServer.sockets.emit('move', clients)
 
-  client.on('move', ({ id, rotation, position, torsoPosition, torsoRotation, bodyPosition }) => {
+  client.on('move', ({ id, rotation, position, torsoPosition, torsoRotation }) => {
     if (clients[id]) {
       clients[id].position = position
       clients[id].rotation = rotation
       clients[id].torsoPosition = torsoPosition
       clients[id].torsoRotation = torsoRotation
-      clients[id].bodyPosition = bodyPosition
+
       ioServer.sockets.emit('move', clients)
     }
   })
