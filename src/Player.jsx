@@ -65,26 +65,6 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
     }
   }, [])
 
-  useFrame(({ raycaster }, delta) => {
-    // Update the raycaster based on the mouse position
-    raycaster.setFromCamera({ x: 0, y: 0 }, camera)
-
-    // Find intersections with objects in the scene
-    const intersects = raycaster.intersectObjects(Object.values(groundObjects), false)
-
-    if (intersects.length > 0) {
-      // If there is an intersection, update the reticule's position
-      const intersection = intersects[0]
-      reticule.current.position.copy(intersection.point)
-    } else {
-      // If there is no intersection, gradually move the reticule towards the default position
-
-      const defaultPosition = new Vector3(0, 0, -50) // Adjust the distance as needed
-      defaultPosition.applyMatrix4(camera.matrixWorld)
-      reticule.current.position.lerp(defaultPosition, 0.6) // Adjust the lerp factor as needed
-    }
-  })
-
   //Player body
   const [ref, body] = useCompoundBody(
     () => ({
@@ -116,6 +96,12 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
   )
 
   useEffect(() => {
+    // Create a new Vector3 with the new position
+    const newPositionVector = new THREE.Vector3(...position)
+
+    // Copy the new position to the body's position
+    body.position.copy(newPositionVector)
+
     const subscription = body.position.subscribe((bodyPosition) => {
       newPosition.current = bodyPosition
     })
@@ -123,15 +109,7 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
     return () => {
       subscription()
     }
-  }, [body])
-
-  useEffect(() => {
-    // Create a new Vector3 with the new position
-    const newPosition = new Vector3(...position)
-
-    // Copy the new position to the body's position
-    body.position.copy(newPosition)
-  }, [position, body])
+  }, [body, position])
 
   const updateSecondGroupQuaternion = () => {
     // Assuming yaw.rotation is the mouse movement data
@@ -159,6 +137,23 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
         lasers.splice(lasers.indexOf(laser), 1)
       }
     })
+
+    raycaster.setFromCamera({ x: 0, y: 0 }, camera)
+
+    // Find intersections with objects in the scene
+    const intersects = raycaster.intersectObjects(Object.values(groundObjects), false)
+
+    if (intersects.length > 0) {
+      // If there is an intersection, update the reticule's position
+      const intersection = intersects[0]
+      reticule.current.position.copy(intersection.point)
+    } else {
+      // If there is no intersection, gradually move the reticule towards the default position
+
+      const defaultPosition = new Vector3(0, 0, -50) // Adjust the distance as needed
+      defaultPosition.applyMatrix4(camera.matrixWorld)
+      reticule.current.position.lerp(defaultPosition, 0.6) // Adjust the lerp factor as needed
+    }
 
     if (isLocalPlayer.current && isRightMouseDown) {
       shootLasers()
