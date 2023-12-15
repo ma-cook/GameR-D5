@@ -13,6 +13,7 @@ import * as THREE from 'three'
 import useMouse from './useMouse'
 import { createLaser } from './laser'
 import { useLaserListener } from './useLaserListener'
+import { shootLasers, updateLasersPosition } from './laserActions'
 
 export default function Player({ secondGroupRef, id, position, rotation, socket, torsoPosition, torsoRotation, reticulePosition, socketClient }) {
   const newPosition = useRef([0, 0, 0])
@@ -44,13 +45,8 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
   const laserGroup = useRef()
   const containerGroup = useRef()
   const { camera } = useThree()
-
-  const shootLasers = () => {
-    createLaser(secondGroup, laserGroup, lasers, socket, socketClient)
-  }
-
+  let prevPosition = new Vector3([0, 0, 0])
   useLaserListener(socket, laserGroup, lasers)
-
   // Create the reticule mesh
   useEffect(() => {
     const geometry = new SphereGeometry(0.05, 16, 16)
@@ -89,7 +85,8 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
       material: 'slippery',
       linearDamping: 0,
       position: position,
-      allowSleep: true
+      allowSleep: true,
+      fixedRotation: true
     }),
 
     useRef()
@@ -98,10 +95,8 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
   useEffect(() => {
     // Create a new Vector3 with the new position
     const newPositionVector = new THREE.Vector3(...position)
-
     // Copy the new position to the body's position
     body.position.copy(newPositionVector)
-
     const subscription = body.position.subscribe((bodyPosition) => {
       newPosition.current = bodyPosition
     })
@@ -112,33 +107,18 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
   }, [body, position])
 
   const updateSecondGroupQuaternion = () => {
-    // Assuming yaw.rotation is the mouse movement data
     const gaze = new Quaternion()
-
-    // Set pitch directly to euler.x
     const euler = new Euler(pitch.rotation.x, yaw.rotation.y, 0, 'YZX')
-
-    // Convert euler angles to quaternion
     gaze.setFromEuler(euler)
-
     secondGroup.current.setRotationFromQuaternion(gaze)
   }
 
   useFrame(({ raycaster }, delta) => {
-    lasers.forEach((laser) => {
-      // Assuming lasers have a property like 'direction' that indicates their movement direction
-      const laserDirection = new Vector3(0, 0, -1).applyQuaternion(laser.quaternion)
-      laser.position.add(laserDirection.clone().multiplyScalar(100 * delta)) // Adjust the speed as needed
-
-      // You may also want to remove lasers that are too far from the player
-      if (laser.position.distanceTo(group.current.position) > 100) {
-        laserGroup.current.remove(laser)
-        // Remove the laser from the state as well
-        lasers.splice(lasers.indexOf(laser), 1)
-      }
-    })
-
     raycaster.setFromCamera({ x: 0, y: 0 }, camera)
+    updateLasersPosition(lasers, group, laserGroup, delta)
+    if (isLocalPlayer.current && isRightMouseDown) {
+      shootLasers(secondGroup, laserGroup, lasers, socket, socketClient)
+    }
 
     // Find intersections with objects in the scene
     const intersects = raycaster.intersectObjects(Object.values(groundObjects), false)
@@ -149,21 +129,14 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
       reticule.current.position.copy(intersection.point)
     } else {
       // If there is no intersection, gradually move the reticule towards the default position
-
       const defaultPosition = new Vector3(0, 0, -50) // Adjust the distance as needed
       defaultPosition.applyMatrix4(camera.matrixWorld)
       reticule.current.position.lerp(defaultPosition, 0.6) // Adjust the lerp factor as needed
     }
 
-    if (isLocalPlayer.current && isRightMouseDown) {
-      shootLasers()
-    }
-    false
     let activeAction = 0 // 0:idle, 1:walking, 2:jumping
     body.angularFactor.set(0, 0, 0)
-
     ref.current.getWorldPosition(worldPosition)
-
     playerGrounded.current = false
     raycasterOffset.copy(worldPosition)
     raycasterOffset.y += 0.01
@@ -176,11 +149,9 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
     if (!playerGrounded.current) {
       body.linearDamping.set(0) // in the air
     } else {
-      body.linearDamping.set(0.9999999)
+      body.linearDamping.set(0.999)
     }
-
     const distance = worldPosition.distanceTo(group.current.position)
-
     inputVelocity.set(0, 0, 0)
     if (playerGrounded.current) {
       // if grounded I can walk
@@ -201,7 +172,6 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
         inputVelocity.x = 40 * delta
       }
       inputVelocity.setLength(1.1) // clamps walking speed
-
       if (activeAction !== prevActiveAction.current) {
         if (prevActiveAction.current !== 1 && activeAction === 1) {
           actions['walk']
@@ -213,7 +183,6 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
         }
         prevActiveAction.current = activeAction
       }
-
       if (keyboard['Space']) {
         if (playerGrounded.current && !inJumpAction.current) {
           activeAction = 2
@@ -222,7 +191,6 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
           inputVelocity.y = 6
         }
       }
-
       euler.y = yaw.rotation.y
       euler.order = 'YZX'
       quat.setFromEuler(euler)
@@ -231,13 +199,11 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
 
       body.applyImpulse([velocity.x, velocity.y, velocity.z], [0, 0, 0])
     }
-
     if (activeAction === 1) {
       mixer.update(delta * distance * 22.5)
     } else {
       mixer.update(delta)
     }
-
     if (worldPosition.y < -3) {
       body.velocity.set(0, 0, 0)
       body.position.set(0, 1, 0)
@@ -245,11 +211,9 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
       body.applyImpulse([velocity.x, velocity.y, velocity.z], [0, 0, 0]).setFinished(false)
       setTime(0)
     }
-
     if (secondGroup.current) {
       secondGroup.current.position.set(group.current.position.x, group.current.position.y, group.current.position.z)
     }
-
     if (document.pointerLockElement) {
       // Make the Torso look at the mouse coordinates
       updateSecondGroupQuaternion()
@@ -270,14 +234,11 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
 
     if (isLocalPlayer.current) {
       // Only update position when the player is moving
-
       if (secondGroup.current && secondGroup.current.position) {
         direction.subVectors(worldPosition, group.current.position).normalize()
-
         // Make the player face the target
         group.current.lookAt(group.current.position.clone().add(direction))
         pivotObject.add(camera)
-
         // Update the pivot object's position when the secondGroup's position is updated
         pivotObject.position.copy(secondGroup.current.position)
         pivotObject.position.y += 1.5
@@ -296,6 +257,13 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
       }
       socket.emit('move', playerData)
     }
+    const currentPosition = new Vector3().copy(group.current.position)
+    // Interpolate between the previous and current position
+    const interpolatedPosition = prevPosition.lerp(currentPosition, 0.5)
+    // Update the player's mesh position
+    ref.current.position.copy(interpolatedPosition)
+    // Store the current position for the next frame
+    prevPosition = currentPosition
   })
 
   return (
