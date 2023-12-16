@@ -34,8 +34,7 @@ function Loader() {
 export default function App() {
   const socketClient = useRef(null)
   const cameraRef = useRef()
-  const [clients, setClients] = useState({})
-
+  const [gameState, setClients] = useState({})
   useEffect(() => {
     // On mount initialize the socket connection
     socketClient.current = io()
@@ -48,8 +47,8 @@ export default function App() {
 
   useEffect(() => {
     if (socketClient.current) {
-      socketClient.current.on('move', (clients) => {
-        setClients(clients)
+      socketClient.current.on('gameState', (gameState) => {
+        setClients(gameState)
       })
     }
   }, [])
@@ -63,7 +62,7 @@ export default function App() {
             <spotLight position={[2.5, 5, 5]} angle={Math.PI / 3} penumbra={0.5} castShadow shadow-mapSize-height={2048} shadow-mapSize-width={2048} intensity={Math.PI * 25} />
             <spotLight position={[-2.5, 5, 5]} angle={Math.PI / 3} penumbra={0.5} castShadow shadow-mapSize-height={2048} shadow-mapSize-width={2048} intensity={Math.PI * 25} />
             <Physics>
-              <Game clients={clients} socketClient={socketClient} />
+              <Game gameState={gameState} socketClient={socketClient} />
             </Physics>
             <gridHelper />
             <Stats />

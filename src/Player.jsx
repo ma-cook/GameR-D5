@@ -11,11 +11,11 @@ import useKeyboard from './useKeyboard'
 import { useStore } from './App'
 import * as THREE from 'three'
 import useMouse from './useMouse'
-import { createLaser } from './laser'
 import { useLaserListener } from './useLaserListener'
 import { shootLasers, updateLasersPosition } from './laserActions'
+import { useReticule } from './useReticule'
 
-export default function Player({ secondGroupRef, id, position, rotation, socket, torsoPosition, torsoRotation, reticulePosition, socketClient }) {
+export default function Player({ id, position, rotation, socket, torsoPosition, torsoRotation, socketClient }) {
   const newPosition = useRef([0, 0, 0])
   const direction = new THREE.Vector3()
   const pivotObject = new THREE.Object3D()
@@ -40,33 +40,30 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
   const prevActiveAction = useRef(0) // 0:idle, 1:walking, 2:jumping
   const keyboard = useKeyboard(shouldListen, isLocalPlayer.current)
   const { groundObjects, actions, mixer, setTime, setFinished } = useStore((state) => state)
-  const reticule = useRef() // Ref for the reticule mesh
   const lasers = useStore((state) => state.lasers)
   const laserGroup = useRef()
   const containerGroup = useRef()
-  const { camera } = useThree()
+  let activeAction = useRef(0)
+  const inputHistory = useRef([])
   let prevPosition = new Vector3([0, 0, 0])
   useLaserListener(socket, laserGroup, lasers)
-  // Create the reticule mesh
-  useEffect(() => {
-    const geometry = new SphereGeometry(0.05, 16, 16)
-    const material = new MeshBasicMaterial({ color: 0xff0000 })
-    const mesh = new Mesh(geometry, material)
-    reticule.current = mesh
-    containerGroup.current.add(mesh) // Add the reticule to the group
-    return () => {
-      if (mesh !== null && containerGroup.current !== null) {
-        containerGroup.current.remove(mesh) // Remove the reticule when the component unmounts
-      }
-    }
-  }, [])
+  const reticule = useReticule(containerGroup)
+  const defaultPosition = new Vector3(0, 0, -50)
+  const serverPosition = new THREE.Vector3()
+  const serverRotation = new THREE.Vector3()
+  const serverTorsoPosition = new THREE.Vector3()
+  const serverTorsoRotation = new THREE.Vector3()
+  const currentPosition = new Vector3()
+  function updateRaycaster(raycaster, camera) {
+    raycaster.setFromCamera({ x: 0, y: 0 }, camera)
+  }
 
   //Player body
   const [ref, body] = useCompoundBody(
     () => ({
       mass: 1,
       shapes: [
-        { args: [0.25], position: [0, 0.25, 0], type: 'Sphere' },
+        { args: [0.35], position: [0, 0.35, 0], type: 'Sphere' },
         { args: [0.25], position: [0, 0.75, 0], type: 'Sphere' },
         { args: [0.25], position: [0, 1.25, 0], type: 'Sphere' }
       ],
@@ -88,7 +85,6 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
       allowSleep: true,
       fixedRotation: true
     }),
-
     useRef()
   )
 
@@ -100,7 +96,6 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
     const subscription = body.position.subscribe((bodyPosition) => {
       newPosition.current = bodyPosition
     })
-
     return () => {
       subscription()
     }
@@ -113,29 +108,73 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
     secondGroup.current.setRotationFromQuaternion(gaze)
   }
 
-  useFrame(({ raycaster }, delta) => {
-    raycaster.setFromCamera({ x: 0, y: 0 }, camera)
+  useEffect(() => {
+    if (socketClient.current) {
+      socketClient.current.on('gameState', (gameState) => {
+        const data = gameState[id] // Get the data for this player
+
+        if (data) {
+          serverPosition.fromArray(data.position)
+          serverRotation.fromArray(data.rotation)
+          serverTorsoPosition.fromArray(data.torsoPosition)
+          serverTorsoRotation.fromArray(data.torsoRotation)
+
+          if (
+            !serverPosition.equals(worldPosition) ||
+            !serverRotation.equals(group.current.rotation) ||
+            !serverTorsoPosition.equals(worldPosition) ||
+            !serverTorsoRotation.equals(secondGroup.current.rotation)
+          ) {
+            const lastServerTime = data.time // Assume the server sends its time
+            const inputsToReapply = inputHistory.current.filter((input) => input.time > lastServerTime)
+            inputsToReapply.forEach((input, index) => {
+              const delta = index > 0 ? input.time - inputsToReapply[index - 1].time : 0
+              switch (input.input) {
+                case 'KeyW':
+                  activeAction = 1
+                  inputVelocity.z = -40 * delta // You'll need to calculate delta
+                  break
+                case 'KeyS':
+                  activeAction = 1
+                  inputVelocity.z = 40 * delta // You'll need to calculate delta
+                  break
+                case 'KeyA':
+                  activeAction = 1
+                  inputVelocity.x = -40 * delta // You'll need to calculate delta
+                  break
+                case 'KeyD':
+                  activeAction = 1
+                  inputVelocity.x = 40 * delta // You'll need to calculate delta
+                  break
+                // Add cases for other inputs as needed
+                default:
+                  break
+              }
+            })
+            inputHistory.current = inputHistory.current.filter((input) => input.time <= lastServerTime)
+          }
+        }
+      })
+    }
+  }, [id, socketClient])
+
+  useFrame(({ raycaster, camera }, delta) => {
+    updateRaycaster(raycaster, camera)
     updateLasersPosition(lasers, group, laserGroup, delta)
     if (isLocalPlayer.current && isRightMouseDown) {
       shootLasers(secondGroup, laserGroup, lasers, socket, socketClient)
     }
-
-    // Find intersections with objects in the scene
     const intersects = raycaster.intersectObjects(Object.values(groundObjects), false)
-
     if (intersects.length > 0) {
-      // If there is an intersection, update the reticule's position
       const intersection = intersects[0]
       reticule.current.position.copy(intersection.point)
     } else {
-      // If there is no intersection, gradually move the reticule towards the default position
-      const defaultPosition = new Vector3(0, 0, -50) // Adjust the distance as needed
+      defaultPosition.set(0, 0, -50)
       defaultPosition.applyMatrix4(camera.matrixWorld)
-      reticule.current.position.lerp(defaultPosition, 0.6) // Adjust the lerp factor as needed
+      reticule.current.position.lerp(defaultPosition, 0.6)
     }
-
     let activeAction = 0 // 0:idle, 1:walking, 2:jumping
-    body.angularFactor.set(0, 0, 0)
+
     ref.current.getWorldPosition(worldPosition)
     playerGrounded.current = false
     raycasterOffset.copy(worldPosition)
@@ -158,18 +197,22 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
       if (keyboard['KeyW']) {
         activeAction = 1
         inputVelocity.z = -40 * delta
+        inputHistory.current.push({ input: 'KeyW', time: Date.now() })
       }
       if (keyboard['KeyS']) {
         activeAction = 1
         inputVelocity.z = 40 * delta
+        inputHistory.current.push({ input: 'KeyS', time: Date.now() })
       }
       if (keyboard['KeyA']) {
         activeAction = 1
         inputVelocity.x = -40 * delta
+        inputHistory.current.push({ input: 'KeyA', time: Date.now() })
       }
       if (keyboard['KeyD']) {
         activeAction = 1
         inputVelocity.x = 40 * delta
+        inputHistory.current.push({ input: 'KeyD', time: Date.now() })
       }
       inputVelocity.setLength(1.1) // clamps walking speed
       if (activeAction !== prevActiveAction.current) {
@@ -219,51 +262,31 @@ export default function Player({ secondGroupRef, id, position, rotation, socket,
       updateSecondGroupQuaternion()
     }
 
-    socket.on('move', (data) => {
-      // Update worldPosition with the new position data
-      if (data.position && Symbol.iterator in Object(data.position)) {
-        // Update worldPosition with the new position data
-        console.log(data)
-        worldPosition.set(...data.position)
-        if (data.id !== socketClient.current.id) {
-          // Update the mesh's position
-          group.current.position.set(...data.position)
-        }
-      }
-    })
-
     if (isLocalPlayer.current) {
-      // Only update position when the player is moving
       if (secondGroup.current && secondGroup.current.position) {
         direction.subVectors(worldPosition, group.current.position).normalize()
-        // Make the player face the target
-        group.current.lookAt(group.current.position.clone().add(direction))
+
         pivotObject.add(camera)
-        // Update the pivot object's position when the secondGroup's position is updated
         pivotObject.position.copy(secondGroup.current.position)
         pivotObject.position.y += 1.5
-        // Rotate the pivot object instead of the camera
         pivotObject.rotation.copy(secondGroup.current.rotation)
       }
     }
-
     if (isLocalPlayer.current) {
       const playerData = {
         id: socketClient.current.id,
         position: newPosition.current,
         rotation: group.current.rotation.toArray(),
         torsoPosition: secondGroup.current.position.toArray(),
-        torsoRotation: secondGroup.current.rotation.toArray()
+        torsoRotation: secondGroup.current.rotation.toArray(),
+        time: Date.now() // Add the current time
       }
       socket.emit('move', playerData)
     }
-    const currentPosition = new Vector3().copy(group.current.position)
-    // Interpolate between the previous and current position
+    currentPosition.copy(group.current.position)
     const interpolatedPosition = prevPosition.lerp(currentPosition, 0.5)
-    // Update the player's mesh position
     ref.current.position.copy(interpolatedPosition)
-    // Store the current position for the next frame
-    prevPosition = currentPosition
+    prevPosition.copy(currentPosition)
   })
 
   return (

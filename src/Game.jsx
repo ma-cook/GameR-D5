@@ -13,7 +13,7 @@ function ToggleDebug({ children }) {
   return <>{debugRendererVisible.visible ? <Debug color={0x008800}>{children}</Debug> : <>{children}</>}</>
 }
 
-export default function Game({ clients, socketClient }) {
+export default function Game({ gameState, socketClient }) {
   useContactMaterial('ground', 'slippery', {
     friction: 0,
     restitution: 0.3,
@@ -28,7 +28,7 @@ export default function Game({ clients, socketClient }) {
       <ToggleDebug>
         <Floor />
         <Box />
-        {Object.values(clients).map((clientData, index) => {
+        {Object.values(gameState).map((clientData, index) => {
           const { id, position, rotation, torsoPosition, torsoRotation, reticulePosition } = clientData
 
           return (
