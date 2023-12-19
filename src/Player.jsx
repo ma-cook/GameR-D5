@@ -295,7 +295,7 @@ export default function Player({ id, position, rotation, socket, torsoPosition, 
   return (
     <group ref={containerGroup}>
       {/* First Eve component */}
-      <group ref={(groupRef) => (group.current = groupRef)} position={position} rotation={rotation}>
+      <group ref={(groupRef) => (group.current = groupRef)} position={newPosition.current} rotation={rotation}>
         <Suspense fallback={null}>
           <Eve />
         </Suspense>
