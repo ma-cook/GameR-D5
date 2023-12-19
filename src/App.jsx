@@ -62,9 +62,11 @@ export default function App() {
             <spotLight position={[2.5, 5, 5]} angle={Math.PI / 3} penumbra={0.5} castShadow shadow-mapSize-height={2048} shadow-mapSize-width={2048} intensity={Math.PI * 25} />
             <spotLight position={[-2.5, 5, 5]} angle={Math.PI / 3} penumbra={0.5} castShadow shadow-mapSize-height={2048} shadow-mapSize-width={2048} intensity={Math.PI * 25} />
             <Physics>
-              <Game gameState={gameState} socketClient={socketClient} />
+              <Debug>
+                <Game gameState={gameState} socketClient={socketClient} />
+              </Debug>
             </Physics>
-            <gridHelper />
+
             <Stats />
           </Suspense>
         </Canvas>

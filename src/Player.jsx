@@ -283,10 +283,13 @@ export default function Player({ id, position, rotation, socket, torsoPosition, 
       }
       socket.emit('move', playerData)
     }
-    currentPosition.copy(group.current.position)
-    const interpolatedPosition = prevPosition.lerp(currentPosition, 0.5)
-    ref.current.position.copy(interpolatedPosition)
-    prevPosition.copy(currentPosition)
+  })
+
+  useFrame(() => {
+    if (ref.current && body) {
+      // Interpolate the position of the mesh to match the body's position
+      ref.current.position.copy(body.position)
+    }
   })
 
   return (
