@@ -1,4 +1,4 @@
-import React, { Suspense, useMemo, useRef, useEffect, useState } from 'react'
+import React, { Suspense, useMemo, useRef, useEffect, useState, useCallback } from 'react'
 import { Vector3, Euler, Quaternion, Matrix4, Raycaster, SphereGeometry, MeshBasicMaterial, Mesh, BoxGeometry, Object3D } from 'three'
 import { useCompoundBody } from '@react-three/cannon'
 import { useFrame, useThree } from '@react-three/fiber'
@@ -15,7 +15,7 @@ import { useLaserListener } from './useLaserListener'
 import { shootLasers, updateLasersPosition } from './laserActions'
 import { useReticule } from './useReticule'
 
-export default function Player({ id, position, rotation, socket, torsoPosition, torsoRotation, socketClient }) {
+export default function Player({ id, position, rotation, socket, torsoRotation, socketClient }) {
   const newPosition = useRef([0, 0, 0])
   const direction = new THREE.Vector3()
   const pivotObject = new THREE.Object3D()
@@ -38,7 +38,7 @@ export default function Player({ id, position, rotation, socket, torsoPosition, 
   const contactNormal = useMemo(() => new Vector3(0, 0, 0), [])
   const down = useMemo(() => new Vec3(0, -1, 0), [])
   const prevActiveAction = useRef(0) // 0:idle, 1:walking, 2:jumping
-  const keyboard = useKeyboard(shouldListen, isLocalPlayer.current)
+  const keyboard = useKeyboard(shouldListen, isLocalPlayer)
   const { groundObjects, actions, mixer, setTime, setFinished } = useStore((state) => state)
   const lasers = useStore((state) => state.lasers)
   const laserGroup = useRef()
@@ -51,9 +51,30 @@ export default function Player({ id, position, rotation, socket, torsoPosition, 
   const defaultPosition = new Vector3(0, 0, -50)
   const serverPosition = new THREE.Vector3()
   const serverRotation = new THREE.Vector3()
-  const serverTorsoPosition = new THREE.Vector3()
+  const newPositionVector = new THREE.Vector3()
   const serverTorsoRotation = new THREE.Vector3()
   const currentPosition = new Vector3()
+  const gaze = new THREE.Quaternion()
+  const playerShapes = [
+    { args: [0.35], position: [0, 0.35, 0], type: 'Sphere' },
+    { args: [0.25], position: [0, 0.75, 0], type: 'Sphere' },
+    { args: [0.25], position: [0, 1.25, 0], type: 'Sphere' }
+  ]
+
+  const playerData = {
+    id: null,
+    position: null,
+    rotation: null,
+    torsoRotation: null,
+    time: null
+  }
+
+  const inputHistoryItem = {
+    input: null,
+    time: null
+  }
+  let inputSequenceNumber = 0
+  let moveTimeoutId = null
   function updateRaycaster(raycaster, camera) {
     raycaster.setFromCamera({ x: 0, y: 0 }, camera)
   }
@@ -62,11 +83,7 @@ export default function Player({ id, position, rotation, socket, torsoPosition, 
   const [ref, body] = useCompoundBody(
     () => ({
       mass: 1,
-      shapes: [
-        { args: [0.35], position: [0, 0.35, 0], type: 'Sphere' },
-        { args: [0.25], position: [0, 0.75, 0], type: 'Sphere' },
-        { args: [0.25], position: [0, 1.25, 0], type: 'Sphere' }
-      ],
+      shapes: playerShapes,
       onCollide: (e) => {
         if (e.contact.bi.id !== e.body.id) {
           contactNormal.set(...e.contact.ni)
@@ -101,12 +118,11 @@ export default function Player({ id, position, rotation, socket, torsoPosition, 
     }
   }, [body, position])
 
-  const updateSecondGroupQuaternion = () => {
-    const gaze = new Quaternion()
-    const euler = new Euler(pitch.rotation.x, yaw.rotation.y, 0, 'YZX')
+  const updateSecondGroupQuaternion = useCallback(() => {
+    euler.set(pitch.rotation.x, yaw.rotation.y, 0, 'YZX')
     gaze.setFromEuler(euler)
     secondGroup.current.setRotationFromQuaternion(gaze)
-  }
+  }, [pitch.rotation.x, yaw.rotation.y, secondGroup.current])
 
   useEffect(() => {
     if (socketClient.current) {
@@ -116,43 +132,35 @@ export default function Player({ id, position, rotation, socket, torsoPosition, 
         if (data) {
           serverPosition.fromArray(data.position)
           serverRotation.fromArray(data.rotation)
-          serverTorsoPosition.fromArray(data.torsoPosition)
           serverTorsoRotation.fromArray(data.torsoRotation)
 
-          if (
-            !serverPosition.equals(worldPosition) ||
-            !serverRotation.equals(group.current.rotation) ||
-            !serverTorsoPosition.equals(worldPosition) ||
-            !serverTorsoRotation.equals(secondGroup.current.rotation)
-          ) {
-            const lastServerTime = data.time // Assume the server sends its time
-            const inputsToReapply = inputHistory.current.filter((input) => input.time > lastServerTime)
-            inputsToReapply.forEach((input, index) => {
-              const delta = index > 0 ? input.time - inputsToReapply[index - 1].time : 0
-              switch (input.input) {
-                case 'KeyW':
-                  activeAction = 1
-                  inputVelocity.z = -40 * delta // You'll need to calculate delta
-                  break
-                case 'KeyS':
-                  activeAction = 1
-                  inputVelocity.z = 40 * delta // You'll need to calculate delta
-                  break
-                case 'KeyA':
-                  activeAction = 1
-                  inputVelocity.x = -40 * delta // You'll need to calculate delta
-                  break
-                case 'KeyD':
-                  activeAction = 1
-                  inputVelocity.x = 40 * delta // You'll need to calculate delta
-                  break
-                // Add cases for other inputs as needed
-                default:
-                  break
-              }
-            })
-            inputHistory.current = inputHistory.current.filter((input) => input.time <= lastServerTime)
-          }
+          const lastServerTime = data.time // Assume the server sends its time
+          const inputsToReapply = inputHistory.current.filter((input) => input.time > lastServerTime)
+          inputsToReapply.forEach((input, index) => {
+            const delta = index > 0 ? input.time - inputsToReapply[index - 1].time : 0
+            switch (input.input) {
+              case 'KeyW':
+                activeAction = 1
+                inputVelocity.z = -40 * delta // You'll need to calculate delta
+                break
+              case 'KeyS':
+                activeAction = 1
+                inputVelocity.z = 40 * delta // You'll need to calculate delta
+                break
+              case 'KeyA':
+                activeAction = 1
+                inputVelocity.x = -40 * delta // You'll need to calculate delta
+                break
+              case 'KeyD':
+                activeAction = 1
+                inputVelocity.x = 40 * delta // You'll need to calculate delta
+                break
+              // Add cases for other inputs as needed
+              default:
+                break
+            }
+          })
+          inputHistory.current = inputHistory.current.filter((input) => input.time <= lastServerTime)
         }
       })
     }
@@ -194,25 +202,31 @@ export default function Player({ id, position, rotation, socket, torsoPosition, 
     inputVelocity.set(0, 0, 0)
     if (playerGrounded.current) {
       // if grounded I can walk
-      if (keyboard['KeyW']) {
+      if (keyboard['KeyW']?.pressed) {
         activeAction = 1
         inputVelocity.z = -40 * delta
-        inputHistory.current.push({ input: 'KeyW', time: Date.now() })
+        inputHistory.current.push({ input: 'KeyW', time: keyboard['KeyW'].time })
       }
-      if (keyboard['KeyS']) {
+      if (keyboard['KeyS']?.pressed) {
         activeAction = 1
         inputVelocity.z = 40 * delta
-        inputHistory.current.push({ input: 'KeyS', time: Date.now() })
+        inputHistoryItem.input = 'KeyW'
+        inputHistoryItem.time = keyboard['KeyW'].time
+        inputHistory.current.push({ ...inputHistoryItem })
       }
-      if (keyboard['KeyA']) {
+      if (keyboard['KeyA']?.pressed) {
         activeAction = 1
         inputVelocity.x = -40 * delta
-        inputHistory.current.push({ input: 'KeyA', time: Date.now() })
+        inputHistoryItem.input = 'KeyA'
+        inputHistoryItem.time = keyboard['KeyA'].time
+        inputHistory.current.push({ ...inputHistoryItem })
       }
-      if (keyboard['KeyD']) {
+      if (keyboard['KeyD']?.pressed) {
         activeAction = 1
         inputVelocity.x = 40 * delta
-        inputHistory.current.push({ input: 'KeyD', time: Date.now() })
+        inputHistoryItem.input = 'KeyD'
+        inputHistoryItem.time = keyboard['KeyD'].time
+        inputHistory.current.push({ ...inputHistoryItem })
       }
       inputVelocity.setLength(1.1) // clamps walking speed
       if (activeAction !== prevActiveAction.current) {
@@ -226,13 +240,16 @@ export default function Player({ id, position, rotation, socket, torsoPosition, 
         }
         prevActiveAction.current = activeAction
       }
-      if (keyboard['Space']) {
+      if (keyboard['Space']?.pressed) {
         if (playerGrounded.current && !inJumpAction.current) {
           activeAction = 2
           inJumpAction.current = true
           actions['jump']
           inputVelocity.y = 6
+          inputHistory.current.push({ input: 'Space', time: keyboard['Space'].time })
         }
+      } else if (!keyboard['Space']?.pressed && inJumpAction.current && playerGrounded.current) {
+        inJumpAction.current = false
       }
       euler.y = yaw.rotation.y
       euler.order = 'YZX'
@@ -242,11 +259,7 @@ export default function Player({ id, position, rotation, socket, torsoPosition, 
 
       body.applyImpulse([velocity.x, velocity.y, velocity.z], [0, 0, 0])
     }
-    if (activeAction === 1) {
-      mixer.update(delta * distance * 22.5)
-    } else {
-      mixer.update(delta)
-    }
+
     if (worldPosition.y < -3) {
       body.velocity.set(0, 0, 0)
       body.position.set(0, 1, 0)
@@ -263,51 +276,43 @@ export default function Player({ id, position, rotation, socket, torsoPosition, 
     }
 
     if (isLocalPlayer.current) {
-      if (secondGroup.current && secondGroup.current.position) {
-        direction.subVectors(worldPosition, group.current.position).normalize()
-
-        pivotObject.add(camera)
-        pivotObject.position.copy(secondGroup.current.position)
-        pivotObject.position.y += 1.5
-        pivotObject.rotation.copy(secondGroup.current.rotation)
-      }
+      pivotObject.add(camera)
+      // Update newPositionVector with the latest newPosition
+      newPositionVector.set(newPosition.current[0], newPosition.current[1], newPosition.current[2])
+      pivotObject.position.copy(newPositionVector)
+      pivotObject.position.y += 1.5
+      pivotObject.rotation.copy(secondGroup.current.rotation)
     }
     if (isLocalPlayer.current) {
-      const playerData = {
-        id: socketClient.current.id,
-        position: newPosition.current,
-        rotation: group.current.rotation.toArray(),
-        torsoPosition: secondGroup.current.position.toArray(),
-        torsoRotation: secondGroup.current.rotation.toArray(),
-        time: Date.now() // Add the current time
-      }
-      socket.emit('move', playerData)
-    }
-  })
+      // Clear the previous timeout
+      clearTimeout(moveTimeoutId)
+      group.current.position.lerp(worldPosition, 0.9)
+      // Set a new timeout
+      moveTimeoutId = setTimeout(() => {
+        playerData.id = socketClient.current.id
+        playerData.position = newPosition.current
+        playerData.rotation = group.current.rotation.toArray()
+        playerData.torsoRotation = secondGroup.current.rotation.toArray()
+        playerData.time = Date.now()
 
-  useFrame(() => {
-    if (ref.current && body) {
-      // Interpolate the position of the mesh to match the body's position
-      ref.current.position.copy(body.position)
+        socket.emit('move', playerData)
+      }, 200) // 200ms debounce time
     }
   })
 
   return (
     <group ref={containerGroup}>
       {/* First Eve component */}
-      <group ref={(groupRef) => (group.current = groupRef)} position={newPosition.current} rotation={rotation}>
+      <group ref={(groupRef) => (group.current = groupRef)} position={[newPosition.current[0], newPosition.current[1], newPosition.current[2]]} rotation={rotation}>
         <Suspense fallback={null}>
           <Eve />
         </Suspense>
       </group>
 
       {/* Second Eve component */}
-      <group ref={(secondGroupRef) => (secondGroup.current = secondGroupRef)} position={torsoPosition} rotation={torsoRotation}>
+      <group ref={(secondGroupRef) => (secondGroup.current = secondGroupRef)} rotation={torsoRotation}>
         <Suspense fallback={null}>
           <Torso />
-          <Text position={[0, 2.0, 0]} color="white" anchorX="center" anchorY="middle">
-            {id}
-          </Text>
         </Suspense>
       </group>
 

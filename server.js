@@ -53,22 +53,22 @@ ioServer.on('connection', (client) => {
     id: client.id,
     position: [0, 1, 0],
     rotation: [0, 0, 0],
-    torsoPosition: [0, 1, 0],
+
     torsoRotation: [0, 0, 0]
   }
 
   ioServer.sockets.emit('gameState', gameState) // Emit the 'gameState' event with the clients object
 
   client.on('move', (playerData) => {
-    const { id, position, rotation, torsoPosition, torsoRotation, time } = playerData
-    // Store the new position, rotation, torsoPosition, torsoRotation and time
+    const { id, position, rotation, torsoRotation, time } = playerData
+    // Store the new position, rotation,  torsoRotation and time
     if (!playerPositions[id]) {
       playerPositions[id] = []
     }
-    playerPositions[id].push({ position, rotation, torsoPosition, torsoRotation, time }) // Store the data together
+    playerPositions[id].push({ position, rotation, torsoRotation, time }) // Store the data together
 
     // Only keep the last few positions
-    if (playerPositions[id].length > 10) {
+    if (playerPositions[id].length > 20) {
       playerPositions[id].shift()
     }
   })
@@ -77,18 +77,18 @@ ioServer.on('connection', (client) => {
     for (const id in playerPositions) {
       const positions = playerPositions[id].map((p) => p.position) // Extract the positions
       const rotations = playerPositions[id].map((p) => p.rotation) // Extract the rotations
-      const torsoPositions = playerPositions[id].map((p) => p.torsoPosition) // Extract the torsoPositions
+
       const torsoRotations = playerPositions[id].map((p) => p.torsoRotation) // Extract the torsoRotations
 
       // Calculate interpolated position, rotation, torsoPosition, and torsoRotation
       const interpolatedPosition = interpolate(positions)
       const interpolatedRotation = interpolate(rotations)
-      const interpolatedTorsoPosition = interpolate(torsoPositions)
+
       const interpolatedTorsoRotation = interpolate(torsoRotations)
       if (gameState[id]) {
         gameState[id].position = interpolatedPosition
         gameState[id].rotation = interpolatedRotation
-        gameState[id].torsoPosition = interpolatedTorsoPosition
+
         gameState[id].torsoRotation = interpolatedTorsoRotation
         gameState[id].time = playerPositions[id][playerPositions[id].length - 1].time
       }
