@@ -5,7 +5,6 @@ import Player from './Player'
 import { useControls } from 'leva'
 import Box from './Box'
 import React, { useState, useEffect, useRef } from 'react'
-import { io } from 'socket.io-client'
 
 function ToggleDebug({ children }) {
   const debugRendererVisible = useControls('Debug Renderer', { visible: false })
@@ -13,7 +12,7 @@ function ToggleDebug({ children }) {
   return <>{debugRendererVisible.visible ? <Debug color={0x008800}>{children}</Debug> : <>{children}</>}</>
 }
 
-export default function Game({ gameState, socketClient }) {
+export default function Game({ gameState, geckosClient }) {
   useContactMaterial('ground', 'slippery', {
     friction: 0,
     restitution: 0.3,
@@ -21,26 +20,26 @@ export default function Game({ gameState, socketClient }) {
     contactEquationRelaxation: 3
   })
 
-  const socket = socketClient.current
+  const channel = geckosClient.current
 
   return (
     <>
       <ToggleDebug>
         <Floor />
         <Box />
-        {Object.values(gameState).map((clientData, index) => {
+        {Object.values(gameState).map((clientData) => {
           const { id, position, rotation, torsoRotation, reticulePosition } = clientData
 
           return (
             <Player
               id={id}
-              key={index}
+              key={id}
               position={position}
               rotation={rotation}
-              socket={socket}
+              channel={channel}
               torsoRotation={torsoRotation}
               reticulePosition={reticulePosition}
-              socketClient={socketClient}
+              geckosClient={geckosClient}
             />
           )
         })}

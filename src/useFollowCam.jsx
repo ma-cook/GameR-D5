@@ -45,8 +45,6 @@ export default function useFollowCam(secondGroupRef, offset, isLocalPlayer) {
     yaw.add(pitch)
     pitch.add(camera)
 
-    alt.add(secondGroup)
-
     document.addEventListener('mousemove', onDocumentMouseMove)
     document.addEventListener('mousewheel', onDocumentMouseWheel, { passive: false })
     return () => {

@@ -6,7 +6,7 @@ import { Suspense } from 'react'
 import { create } from 'zustand'
 import { AnimationMixer } from 'three'
 import React, { useState, useEffect, useRef } from 'react'
-import { io } from 'socket.io-client'
+import geckos from '@geckos.io/client'
 
 import './App.css'
 
@@ -32,29 +32,34 @@ function Loader() {
 }
 
 export default function App() {
-  const socketClient = useRef(null)
+  const geckosClient = useRef(null)
   const cameraRef = useRef()
   const [gameState, setClients] = useState({})
   useEffect(() => {
-    // On mount initialize the socket connection
-    socketClient.current = io()
+    // On mount initialize the geckos connection
+    if (!geckosClient.current) {
+      geckosClient.current = geckos({ port: 4444 })
+      geckosClient.current.onConnect(() => {
+        console.log('Connected to server')
+      })
+
+      geckosClient.current.on('gameState', (newGameState) => {
+        if (JSON.stringify(newGameState) !== JSON.stringify(gameState)) {
+          setClients(newGameState)
+        }
+      })
+    }
 
     // Dispose gracefully
     return () => {
-      if (socketClient.current) socketClient.current.disconnect()
-    }
-  }, [])
-
-  useEffect(() => {
-    if (socketClient.current) {
-      socketClient.current.on('gameState', (gameState) => {
-        setClients(gameState)
-      })
+      if (geckosClient.current && geckosClient.current.localPeerConnection) {
+        geckosClient.current.close()
+      }
     }
   }, [])
 
   return (
-    socketClient.current && (
+    geckosClient.current && (
       <>
         <Canvas shadows onPointerDown={(e) => e.target.requestPointerLock()}>
           <Suspense fallback={<Loader />}>
@@ -62,7 +67,7 @@ export default function App() {
             <spotLight position={[2.5, 5, 5]} angle={Math.PI / 3} penumbra={0.5} castShadow shadow-mapSize-height={2048} shadow-mapSize-width={2048} intensity={Math.PI * 25} />
             <spotLight position={[-2.5, 5, 5]} angle={Math.PI / 3} penumbra={0.5} castShadow shadow-mapSize-height={2048} shadow-mapSize-width={2048} intensity={Math.PI * 25} />
             <Physics>
-              <Game gameState={gameState} socketClient={socketClient} />
+              <Game gameState={gameState} geckosClient={geckosClient} />
             </Physics>
             <gridHelper />
             <Stats />

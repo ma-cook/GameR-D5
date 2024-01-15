@@ -15,12 +15,12 @@ import { useLaserListener } from './useLaserListener'
 import { shootLasers, updateLasersPosition } from './laserActions'
 import { useReticule } from './useReticule'
 
-export default function Player({ id, position, rotation, socket, torsoRotation, socketClient }) {
+export default function Player({ id, position, rotation, channel, torsoRotation, geckosClient }) {
   const newPosition = useRef([0, 0, 0])
   const direction = new THREE.Vector3()
   const pivotObject = new THREE.Object3D()
   const { isRightMouseDown, mouseMovement } = useMouse()
-  const isLocalPlayer = useRef(id == socketClient.current.id)
+  const isLocalPlayer = useRef(id == geckosClient.current.id)
   const playerGrounded = useRef(false)
   const inJumpAction = useRef(false)
   const group = useRef()
@@ -46,7 +46,7 @@ export default function Player({ id, position, rotation, socket, torsoRotation, 
   let activeAction = useRef(0)
   const inputHistory = useRef([])
   let prevPosition = new Vector3([0, 0, 0])
-  useLaserListener(socket, laserGroup, lasers)
+  useLaserListener(channel, laserGroup, lasers)
   const reticule = useReticule(containerGroup)
   const defaultPosition = new Vector3(0, 0, -50)
   const serverPosition = new THREE.Vector3()
@@ -125,8 +125,8 @@ export default function Player({ id, position, rotation, socket, torsoRotation, 
   }, [pitch.rotation.x, yaw.rotation.y, secondGroup.current])
 
   useEffect(() => {
-    if (socketClient.current) {
-      socketClient.current.on('gameState', (gameState) => {
+    if (geckosClient.current) {
+      geckosClient.current.on('gameState', (gameState) => {
         const data = gameState[id] // Get the data for this player
 
         if (data) {
@@ -164,13 +164,13 @@ export default function Player({ id, position, rotation, socket, torsoRotation, 
         }
       })
     }
-  }, [id, socketClient])
+  }, [id, geckosClient])
 
   useFrame(({ raycaster, camera }, delta) => {
     updateRaycaster(raycaster, camera)
     updateLasersPosition(lasers, group, laserGroup, delta)
     if (isLocalPlayer.current && isRightMouseDown) {
-      shootLasers(secondGroup, laserGroup, lasers, socket, socketClient)
+      shootLasers(secondGroup, laserGroup, lasers, channel, geckosClient)
     }
     const intersects = raycaster.intersectObjects(Object.values(groundObjects), false)
     if (intersects.length > 0) {
@@ -289,13 +289,13 @@ export default function Player({ id, position, rotation, socket, torsoRotation, 
       group.current.position.lerp(worldPosition, 0.9)
       // Set a new timeout
       moveTimeoutId = setTimeout(() => {
-        playerData.id = socketClient.current.id
+        playerData.id = geckosClient.current.id
         playerData.position = newPosition.current
         playerData.rotation = group.current.rotation.toArray()
         playerData.torsoRotation = secondGroup.current.rotation.toArray()
         playerData.time = Date.now()
 
-        socket.emit('move', playerData)
+        channel.emit('move', playerData)
       }, 200) // 200ms debounce time
     }
   })

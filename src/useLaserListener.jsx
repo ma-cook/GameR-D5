@@ -1,9 +1,9 @@
 import { useEffect } from 'react'
 import * as THREE from 'three'
 
-export function useLaserListener(socket, laserGroup, lasers) {
+export function useLaserListener(channel, laserGroup, lasers) {
   useEffect(() => {
-    socket.on('laser', (laserData) => {
+    channel.on('laser', (laserData) => {
       // Create a new laser with the received data
       const laserGeometry = new THREE.BoxGeometry(0.05, 0.05, 0.2)
       const laserMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 })
@@ -15,9 +15,5 @@ export function useLaserListener(socket, laserGroup, lasers) {
       laserGroup.current.add(laserMesh)
       lasers.push(laserMesh)
     })
-
-    return () => {
-      socket.off('laser')
-    }
-  }, [socket, laserGroup, lasers])
+  }, [channel, laserGroup, lasers])
 }

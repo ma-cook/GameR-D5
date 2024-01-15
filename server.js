@@ -3,7 +3,8 @@ import express from 'express'
 import Router from 'express-promise-router'
 import { createServer } from 'vite'
 import viteConfig from './vite.config.js'
-import { Server } from 'socket.io'
+import geckos from '@geckos.io/server'
+import http from 'http'
 
 // Create router
 const router = Router()
@@ -35,31 +36,29 @@ router.use('*', (req, res) => {
 // Create express app and listen on port 4444
 const app = express()
 app.use(router)
-const server = app.listen(process.env.PORT || 4444, () => {
-  console.log(`Listening on port http://localhost:4444...`)
-})
+const server = http.createServer(app)
+const io = geckos()
 
-const ioServer = new Server(server)
+io.addServer(server)
 
 let clients = {}
 let gameState = {}
 
 // Socket app msgs
-ioServer.on('connection', (client) => {
-  console.log(`User ${client.id} connected, there are currently ${ioServer.engine.clientsCount} users connected`)
+io.onConnection((channel) => {
+  console.log(`User ${channel.id} connected`)
 
   //Add a new client indexed by his id
-  gameState[client.id] = {
-    id: client.id,
+  gameState[channel.id] = {
+    id: channel.id,
     position: [0, 1, 0],
     rotation: [0, 0, 0],
-
     torsoRotation: [0, 0, 0]
   }
 
-  ioServer.sockets.emit('gameState', gameState) // Emit the 'gameState' event with the clients object
+  io.emit('gameState', gameState) // Emit the 'gameState' event with the clients object
 
-  client.on('move', (playerData) => {
+  channel.on('move', (playerData) => {
     const { id, position, rotation, torsoRotation, time } = playerData
     // Store the new position, rotation,  torsoRotation and time
     if (!playerPositions[id]) {
@@ -94,21 +93,25 @@ ioServer.on('connection', (client) => {
       }
     }
 
-    ioServer.sockets.emit('gameState', gameState) // Emit to all connected clients
+    io.emit('gameState', gameState) // Emit to all connected clients
   }, 1000 / 60)
 
-  client.on('laser', (laserData) => {
-    ioServer.sockets.emit('laser', laserData)
+  channel.on('laser', (laserData) => {
+    io.emit('laser', laserData)
   })
 
-  client.on('disconnect', () => {
-    console.log(`User ${client.id} disconnected, there are currently ${ioServer.engine.clientsCount} users connected`)
+  channel.onDisconnect(() => {
+    console.log(`User ${channel.id} disconnected`)
 
     //Delete this client from the object
-    delete gameState[client.id]
+    delete gameState[channel.id]
 
-    ioServer.sockets.emit('move', clients)
+    io.emit('move', clients)
   })
+})
+
+server.listen(process.env.PORT || 4444, () => {
+  console.log(`Listening on port http://localhost:4444...`)
 })
 
 function interpolate(positions) {
