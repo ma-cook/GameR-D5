@@ -19,10 +19,16 @@ const vite = await createServer({
 })
 
 // Main route serves the index HTML
-router.get('/', async (req, res, next) => {
-  let html = fs.readFileSync('./public/index.html', 'utf-8')
-  html = await vite.transformIndexHtml(req.url, html)
-  res.send(html)
+router.get('/', (req, res, next) => {
+  fs.readFile('./public/index.html', 'utf-8', (err, html) => {
+    if (err) {
+      console.error(err)
+      return
+    }
+    vite.transformIndexHtml(req.url, html).then((transformedHtml) => {
+      res.send(transformedHtml)
+    })
+  })
 })
 
 // Use vite middleware so it rebuilds frontend
@@ -67,7 +73,7 @@ io.onConnection((channel) => {
     playerPositions[id].push({ position, rotation, torsoRotation, time }) // Store the data together
 
     // Only keep the last few positions
-    if (playerPositions[id].length > 20) {
+    if (playerPositions[id].length > 6) {
       playerPositions[id].shift()
     }
   })
@@ -94,7 +100,7 @@ io.onConnection((channel) => {
     }
 
     io.emit('gameState', gameState) // Emit to all connected clients
-  }, 1000 / 60)
+  }, 30 / 30)
 
   channel.on('laser', (laserData) => {
     io.emit('laser', laserData)
@@ -115,13 +121,15 @@ server.listen(process.env.PORT || 4444, () => {
 })
 
 function interpolate(positions) {
-  if (positions.length < 2) {
+  const len = positions.length
+
+  if (len < 30) {
     // If there are not enough positions to interpolate, return the last position or a default position
-    return positions[0] || [0, 0, 0]
+    return positions[len - 1]
   }
 
-  const lastPosition = positions[positions.length - 1]
-  const secondLastPosition = positions[positions.length - 2]
+  const lastPosition = positions[len - 1]
+  const secondLastPosition = positions[len - 2]
 
   return [(lastPosition[0] + secondLastPosition[0]) / 2, (lastPosition[1] + secondLastPosition[1]) / 2, (lastPosition[2] + secondLastPosition[2]) / 2]
 }

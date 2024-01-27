@@ -2,7 +2,7 @@ import * as THREE from 'three'
 
 export function createLaser(secondGroup, laserGroup, lasers, socket, socketClient) {
   // Create lasers and set their positions
-  const laserGeometry = new THREE.BoxGeometry(0.05, 0.05, 0.2)
+  const laserGeometry = new THREE.BoxGeometry(0.05, 0.05, 0.4)
   const laserMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 })
   const laserMesh = new THREE.Mesh(laserGeometry, laserMaterial)
   laserMesh.position.set(secondGroup.current.position.x, secondGroup.current.position.y + 1, secondGroup.current.position.z)

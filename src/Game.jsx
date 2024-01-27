@@ -6,13 +6,7 @@ import { useControls } from 'leva'
 import Box from './Box'
 import React, { useState, useEffect, useRef } from 'react'
 
-function ToggleDebug({ children }) {
-  const debugRendererVisible = useControls('Debug Renderer', { visible: false })
-
-  return <>{debugRendererVisible.visible ? <Debug color={0x008800}>{children}</Debug> : <>{children}</>}</>
-}
-
-export default function Game({ gameState, geckosClient }) {
+function Game({ gameState, geckosClient }) {
   useContactMaterial('ground', 'slippery', {
     friction: 0,
     restitution: 0.3,
@@ -24,26 +18,26 @@ export default function Game({ gameState, geckosClient }) {
 
   return (
     <>
-      <ToggleDebug>
-        <Floor />
-        <Box />
-        {Object.values(gameState).map((clientData) => {
-          const { id, position, rotation, torsoRotation, reticulePosition } = clientData
+      <Floor />
+      <Box />
+      {Object.values(gameState).map((clientData) => {
+        const { id, position, rotation, torsoRotation, reticulePosition } = clientData
 
-          return (
-            <Player
-              id={id}
-              key={id}
-              position={position}
-              rotation={rotation}
-              channel={channel}
-              torsoRotation={torsoRotation}
-              reticulePosition={reticulePosition}
-              geckosClient={geckosClient}
-            />
-          )
-        })}
-      </ToggleDebug>
+        return (
+          <Player
+            id={id}
+            key={id}
+            position={position}
+            rotation={rotation}
+            channel={channel}
+            torsoRotation={torsoRotation}
+            reticulePosition={reticulePosition}
+            geckosClient={geckosClient}
+          />
+        )
+      })}
     </>
   )
 }
+
+export default React.memo(Game)
