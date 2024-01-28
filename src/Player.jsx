@@ -127,70 +127,60 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
     secondGroup.current.setRotationFromQuaternion(gaze)
   }, [pitch.rotation.x, yaw.rotation.y, secondGroup.current])
 
+  const handleGameState = (gameState) => {
+    const data = gameState[id]
+    if (!data) return
+
+    serverPosition.fromArray(data.position)
+    serverRotation.fromArray(data.rotation)
+    serverTorsoRotation.fromArray(data.torsoRotation)
+
+    const lastServerTime = data.time
+    inputHistory.current = inputHistory.current.reduce((newInputHistory, input, index) => {
+      const delta = index > 0 ? input.time - inputHistory.current[index - 1].time : 0
+      if (input.time <= lastServerTime) {
+        newInputHistory.push(input)
+      } else {
+        activeAction = 1
+        inputVelocity[input.input === 'KeyA' || input.input === 'KeyD' ? 'x' : 'z'] = (input.input === 'KeyW' || input.input === 'KeyA' ? -100 : 100) * delta
+      }
+      return newInputHistory
+    }, [])
+  }
+
   useEffect(() => {
     if (geckosClient.current) {
-      geckosClient.current.on('gameState', (gameState) => {
-        const data = gameState[id] // Get the data for this player
-
-        if (data) {
-          serverPosition.fromArray(data.position)
-          serverRotation.fromArray(data.rotation)
-          serverTorsoRotation.fromArray(data.torsoRotation)
-
-          const lastServerTime = data.time // Assume the server sends its time
-          const newInputHistory = []
-          inputHistory.current.forEach((input, index) => {
-            if (input.time > lastServerTime) {
-              const delta = index > 0 ? input.time - inputHistory.current[index - 1].time : 0
-              switch (input.input) {
-                case 'KeyW':
-                  activeAction = 1
-                  inputVelocity.z = -100 * delta // You'll need to calculate delta
-                  break
-                case 'KeyS':
-                  activeAction = 1
-                  inputVelocity.z = 100 * delta // You'll need to calculate delta
-                  break
-                case 'KeyA':
-                  activeAction = 1
-                  inputVelocity.x = -100 * delta // You'll need to calculate delta
-                  break
-                case 'KeyD':
-                  activeAction = 1
-                  inputVelocity.x = 100 * delta // You'll need to calculate delta
-                  break
-                // Add cases for other inputs as needed
-                default:
-                  break
-              }
-            } else {
-              newInputHistory.push(input)
-            }
-          })
-          inputHistory.current = newInputHistory
-        }
-      })
+      geckosClient.current.on('gameState', handleGameState)
     }
   }, [id, geckosClient])
 
-  useFrame(({ raycaster, camera }, delta) => {
+  const handleFrame = ({ raycaster, camera }, delta) => {
     newPositionVector.set(...position)
-    // Copy the new position to the body's position
     body.position.copy(newPositionVector)
     body.position.subscribe((bodyPosition) => {
       newPosition.current = bodyPosition
     })
     updateRaycaster(raycaster, camera)
     updateLasersPosition(lasers, group, laserGroup, delta)
+    handleLaserFiring()
+    handleIntersections(raycaster, camera)
+    handlePlayerMovement(delta, raycaster)
+    handleLocalPlayer(camera)
+  }
+
+  useFrame(handleFrame)
+
+  function handleLaserFiring() {
     if (isLocalPlayer.current && isRightMouseDown) {
       const now = Date.now()
-      // Check if enough time has passed since the last fired laser
       if (now - lastFired.current > cooldown) {
         shootLasers(secondGroup, laserGroup, lasers, channel, geckosClient)
-        // Update the timestamp of the last fired laser
         lastFired.current = now
       }
     }
+  }
+
+  function handleIntersections(raycaster, camera) {
     const intersects = raycaster.intersectObjects(Object.values(groundObjects), false)
     if (intersects.length > 0) {
       const intersection = intersects[0]
@@ -200,72 +190,72 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
       defaultPosition.applyMatrix4(camera.matrixWorld)
       reticule.current.position.lerp(defaultPosition, 0.6)
     }
-    let activeAction = 0 // 0:idle, 1:walking, 2:jumping
+  }
 
+  function handlePlayerMovement(delta, raycaster) {
+    let activeAction = 0
     ref.current.getWorldPosition(worldPosition)
-    playerGrounded.current = false
+    playerGrounded.current = isPlayerGrounded(raycaster, worldPosition)
+    body.linearDamping.set(playerGrounded.current ? 0.999 : 0)
+    inputVelocity.set(0, 0, 0)
+    if (playerGrounded.current) {
+      handleGroundedPlayerMovement(delta)
+    }
+  }
+
+  function isPlayerGrounded(raycaster, worldPosition) {
     raycasterOffset.copy(worldPosition)
     raycasterOffset.y += 0.01
     raycaster.set(raycasterOffset, down)
-    raycaster.intersectObjects(Object.values(groundObjects), false).forEach((i) => {
-      if (i.distance < 0.028) {
-        playerGrounded.current = true
+    return raycaster.intersectObjects(Object.values(groundObjects), false).some((i) => i.distance < 0.028)
+  }
+
+  function handleGroundedPlayerMovement(delta) {
+    ;['KeyW', 'KeyS', 'KeyA', 'KeyD'].forEach((key) => {
+      if (keyboard[key]?.pressed) {
+        activeAction = 1
+        inputVelocity.z = key === 'KeyW' || key === 'KeyS' ? (key === 'KeyW' ? -100 : 100) * delta : inputVelocity.z
+        inputVelocity.x = key === 'KeyA' || key === 'KeyD' ? (key === 'KeyA' ? -100 : 100) * delta : inputVelocity.x
+        inputHistory.current.push({ input: key, time: keyboard[key].time })
       }
     })
-    if (!playerGrounded.current) {
-      body.linearDamping.set(0) // in the air
-    } else {
-      body.linearDamping.set(0.999)
-    }
+    handleJumpAction()
+    euler.y = yaw.rotation.y
+    euler.order = 'YZX'
+    quat.setFromEuler(euler)
+    inputVelocity.applyQuaternion(quat)
+    velocity.set(inputVelocity.x, inputVelocity.y, inputVelocity.z)
+    body.applyImpulse([velocity.x, velocity.y, velocity.z], [0, 0, 0])
+  }
 
-    inputVelocity.set(0, 0, 0)
-    if (playerGrounded.current) {
-      // if grounded I can walk
-      ;['KeyW', 'KeyS', 'KeyA', 'KeyD'].forEach((key) => {
-        if (keyboard[key]?.pressed) {
-          activeAction = 1
-          inputVelocity.z = key === 'KeyW' || key === 'KeyS' ? (key === 'KeyW' ? -100 : 100) * delta : inputVelocity.z
-          inputVelocity.x = key === 'KeyA' || key === 'KeyD' ? (key === 'KeyA' ? -100 : 100) * delta : inputVelocity.x
-          inputHistory.current.push({ input: key, time: keyboard[key].time })
-        }
-      })
-      if (keyboard['Space']?.pressed) {
-        activeAction = 2
-        inJumpAction.current = true
-        actions['jump']
-        inputVelocity.y = 6
-        inputHistory.current.push({ input: 'Space', time: keyboard['Space'].time })
-      } else if (!keyboard['Space']?.pressed && inJumpAction.current && playerGrounded.current) {
-        inJumpAction.current = false
-      }
-      euler.y = yaw.rotation.y
-      euler.order = 'YZX'
-      quat.setFromEuler(euler)
-      inputVelocity.applyQuaternion(quat)
-      velocity.set(inputVelocity.x, inputVelocity.y, inputVelocity.z)
-      body.applyImpulse([velocity.x, velocity.y, velocity.z], [0, 0, 0])
+  function handleJumpAction() {
+    if (keyboard['Space']?.pressed) {
+      activeAction = 2
+      inJumpAction.current = true
+      actions['jump']
+      inputVelocity.y = 6
+      inputHistory.current.push({ input: 'Space', time: keyboard['Space'].time })
+    } else if (!keyboard['Space']?.pressed && inJumpAction.current && playerGrounded.current) {
+      inJumpAction.current = false
     }
+  }
 
+  function handleLocalPlayer(camera) {
     if (isLocalPlayer.current) {
       if (document.pointerLockElement) {
-        // Make the Torso look at the mouse coordinates
         updateSecondGroupQuaternion()
       }
       pivotObject.add(camera)
-      // Update newPositionVector with the latest newPosition
-
       pivotObject.position.copy(newPositionVector)
       pivotObject.position.y += 1.5
       pivotObject.rotation.copy(secondGroup.current.rotation)
-      // Clear the previous timeout
       clearTimeout(moveTimeoutId)
       group.current.position.lerp(worldPosition, 0.9)
       secondGroup.current.position.copy(group.current.position)
       newPositionVector.fromArray(newPosition.current)
-      // Set a new timeout
       emitMoveEvent()
     }
-  })
+  }
 
   return (
     <group ref={containerGroup}>
