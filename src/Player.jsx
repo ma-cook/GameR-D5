@@ -11,6 +11,7 @@ import useKeyboard from './useKeyboard'
 import { useStore } from './App'
 import * as THREE from 'three'
 import useMouse from './useMouse'
+import { useLaserListener } from './useLaserListener'
 
 import { shootLasers, updateLasersPosition } from './laserActions'
 import { useReticule } from './useReticule'
@@ -48,7 +49,8 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
   let activeAction = useRef(0)
   const inputHistory = useRef([])
   let prevPosition = new Vector3([0, 0, 0])
-
+  useLaserListener(channel, laserGroup, lasers)
+  let inputSequenceNumber = 0
   const reticule = useReticule(containerGroup)
   const defaultPosition = new Vector3(0, 0, -50)
   const serverPosition = new THREE.Vector3()
@@ -57,6 +59,7 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
   const serverTorsoRotation = new THREE.Vector3()
   const currentPosition = new Vector3()
   const gaze = new THREE.Quaternion()
+
   const playerShapes = [
     { args: [0.35], position: [0, 0.35, 0], type: 'Sphere' },
     { args: [0.25], position: [0, 0.75, 0], type: 'Sphere' },
@@ -77,6 +80,19 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
   }
 
   let moveTimeoutId = null
+
+  function emitMoveEvent() {
+    clearTimeout(moveTimeoutId)
+    moveTimeoutId = setTimeout(() => {
+      playerData.id = geckosClient.current.id
+      playerData.position = newPosition.current
+      playerData.rotation = group.current.rotation.toArray()
+      playerData.torsoRotation = secondGroup.current.rotation.toArray()
+      playerData.time = Date.now()
+
+      channel.emit('move', playerData)
+    }, 200) // 200ms debounce time
+  }
   function updateRaycaster(raycaster, camera) {
     raycaster.setFromCamera({ x: 0, y: 0 }, camera)
   }
@@ -158,7 +174,7 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
   }, [id, geckosClient])
 
   useFrame(({ raycaster, camera }, delta) => {
-    const newPositionVector = new THREE.Vector3(...position)
+    newPositionVector.set(...position)
     // Copy the new position to the body's position
     body.position.copy(newPositionVector)
     body.position.subscribe((bodyPosition) => {
@@ -244,17 +260,10 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
       // Clear the previous timeout
       clearTimeout(moveTimeoutId)
       group.current.position.lerp(worldPosition, 0.9)
-      secondGroup.current.position.set(group.current.position.x, group.current.position.y, group.current.position.z)
+      secondGroup.current.position.copy(group.current.position)
+      newPositionVector.fromArray(newPosition.current)
       // Set a new timeout
-      moveTimeoutId = setTimeout(() => {
-        playerData.id = geckosClient.current.id
-        playerData.position = newPosition.current
-        playerData.rotation = group.current.rotation.toArray()
-        playerData.torsoRotation = secondGroup.current.rotation.toArray()
-        playerData.time = Date.now()
-
-        channel.emit('move', playerData)
-      }, 200) // 200ms debounce time
+      emitMoveEvent()
     }
   })
 
@@ -268,7 +277,10 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
       </group>
 
       {/* Second Eve component */}
-      <group ref={(secondGroupRef) => (secondGroup.current = secondGroupRef)} rotation={torsoRotation}>
+      <group
+        ref={(secondGroupRef) => (secondGroup.current = secondGroupRef)}
+        position={[newPosition.current[0], newPosition.current[1], newPosition.current[2]]}
+        rotation={torsoRotation}>
         <Suspense fallback={null}>
           <Torso />
         </Suspense>

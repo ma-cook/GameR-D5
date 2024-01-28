@@ -100,7 +100,7 @@ io.onConnection((channel) => {
     }
 
     io.emit('gameState', gameState) // Emit to all connected clients
-  }, 30 / 30)
+  }, 100 / 100)
 
   channel.on('laser', (laserData) => {
     io.emit('laser', laserData)

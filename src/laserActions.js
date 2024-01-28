@@ -1,8 +1,8 @@
 import { Vector3 } from 'three'
 import { createLaser } from './laser'
 
-export const shootLasers = (secondGroup, laserGroup, lasers, socket, socketClient) => {
-  createLaser(secondGroup, laserGroup, lasers, socket, socketClient)
+export const shootLasers = (secondGroup, laserGroup, lasers, channel, geckosClient) => {
+  createLaser(secondGroup, laserGroup, lasers, channel, geckosClient)
 }
 
 export const updateLasersPosition = (lasers, group, laserGroup, delta) => {
