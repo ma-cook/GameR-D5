@@ -60,11 +60,7 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
   const currentPosition = new Vector3()
   const gaze = new THREE.Quaternion()
 
-  const playerShapes = [
-    { args: [0.35], position: [0, 0.35, 0], type: 'Sphere' },
-    { args: [0.25], position: [0, 0.75, 0], type: 'Sphere' },
-    { args: [0.25], position: [0, 1.25, 0], type: 'Sphere' }
-  ]
+  const playerShapes = [{ args: [0.35], position: [0, 0.35, 0], type: 'Sphere' }]
 
   const playerData = {
     id: null,
@@ -91,7 +87,7 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
       playerData.time = Date.now()
 
       channel.emit('move', playerData)
-    }, 200) // 200ms debounce time
+    }, 300) // 200ms debounce time
   }
   function updateRaycaster(raycaster, camera) {
     raycaster.setFromCamera({ x: 0, y: 0 }, camera)
@@ -109,14 +105,16 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
         if (contactNormal.dot(down) > 0.5) {
           if (inJumpAction.current) {
             // landed
-            inJumpAction.current = true
+            inJumpAction.current = false
             actions['jump']
           }
         }
       },
       material: 'slippery',
+      linearDamping: 0,
       position: position,
-      allowSleep: true
+      allowSleep: true,
+      fixedRotation: true
     }),
     useRef()
   )
@@ -161,7 +159,7 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
       newPosition.current = bodyPosition
     })
     updateRaycaster(raycaster, camera)
-    updateLasersPosition(lasers, group, laserGroup, delta)
+    updateLasersPosition(lasers, group, laserGroup, delta, channel)
     handleLaserFiring()
     handleIntersections(raycaster, camera)
     handlePlayerMovement(delta, raycaster)

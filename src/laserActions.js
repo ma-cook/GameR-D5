@@ -5,14 +5,10 @@ export const shootLasers = (secondGroup, laserGroup, lasers, channel, geckosClie
   createLaser(secondGroup, laserGroup, lasers, channel, geckosClient)
 }
 
-export const updateLasersPosition = (lasers, group, laserGroup, delta) => {
-  lasers.forEach((laser) => {
+export const updateLasersPosition = (lasers, group, laserGroup, delta, channel) => {
+  ;[...lasers].forEach((laser) => {
+    // Create a copy of the lasers array
     const laserDirection = new Vector3(0, 0, -1).applyQuaternion(laser.quaternion)
     laser.position.add(laserDirection.clone().multiplyScalar(100 * delta))
-
-    if (laser.position.distanceTo(group.current.position) > 100) {
-      laserGroup.current.remove(laser)
-      lasers.splice(lasers.indexOf(laser), 1)
-    }
   })
 }

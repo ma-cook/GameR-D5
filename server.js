@@ -9,6 +9,7 @@ import http from 'http'
 // Create router
 const router = Router()
 const playerPositions = {}
+
 // Create vite front end dev server
 const vite = await createServer({
   configFile: false,
@@ -44,11 +45,14 @@ const app = express()
 app.use(router)
 const server = http.createServer(app)
 const io = geckos()
+const range = 100
 
 io.addServer(server)
 
 let clients = {}
 let gameState = {}
+let gameStatesHistory = []
+let lasers = {}
 
 // Socket app msgs
 io.onConnection((channel) => {
@@ -57,28 +61,52 @@ io.onConnection((channel) => {
   //Add a new client indexed by his id
   gameState[channel.id] = {
     id: channel.id,
-    position: [0, 1, 0],
+    position: [Math.random() * range - range / 2, 1, 0],
     rotation: [0, 0, 0],
     torsoRotation: [0, 0, 0]
   }
 
   io.emit('gameState', gameState) // Emit the 'gameState' event with the clients object
-
+  let lastMoveTime = 0
   channel.on('move', (playerData) => {
-    const { id, position, rotation, torsoRotation, time } = playerData
-    // Store the new position, rotation,  torsoRotation and time
-    if (!playerPositions[id]) {
-      playerPositions[id] = []
-    }
-    playerPositions[id].push({ position, rotation, torsoRotation, time }) // Store the data together
+    const now = Date.now()
+    if (now - lastMoveTime < 300) {
+      // Limit to 10 moves per second
+      const { id, position, rotation, torsoRotation, time } = playerData
 
-    // Only keep the last few positions
-    if (playerPositions[id].length > 6) {
-      playerPositions[id].shift()
+      // Find the game state at the time the action was performed
+      const pastGameState = gameStatesHistory.find((state) => state.time === time)
+
+      if (pastGameState) {
+        // Resolve the action in the past game state
+        const pastPlayerState = pastGameState[id]
+        if (pastPlayerState) {
+          const changes = getChanges(pastGameState, playerData)
+          gameState[id] = applyChanges(gameState[id], changes)
+        } else {
+          // If this is a lag compensation event, update the player's position with the past game state
+          pastPlayerState.position = position
+          pastPlayerState.rotation = rotation
+          pastPlayerState.torsoRotation = torsoRotation
+        }
+      }
+
+      // If this is a normal 'move' event, update the player's position as usual
+      if (gameState[id]) {
+        gameState[id].position = position
+        gameState[id].rotation = rotation
+        gameState[id].torsoRotation = torsoRotation
+      }
+      return
     }
+    lastMoveTime = now
   })
 
   setInterval(() => {
+    gameStatesHistory.push(JSON.parse(JSON.stringify(gameState)))
+    if (gameStatesHistory.length > 30) {
+      gameStatesHistory.shift()
+    }
     for (const id in playerPositions) {
       const positions = playerPositions[id].map((p) => p.position) // Extract the positions
       const rotations = playerPositions[id].map((p) => p.rotation) // Extract the rotations
@@ -100,10 +128,16 @@ io.onConnection((channel) => {
     }
 
     io.emit('gameState', gameState) // Emit to all connected clients
-  }, 100 / 100)
+  }, 30 / 30)
 
   channel.on('laser', (laserData) => {
+    lasers[laserData.id] = laserData
     io.emit('laser', laserData)
+  })
+
+  channel.on('removeLaser', (laserId) => {
+    delete lasers[laserId]
+    io.emit('removeLaser', laserId)
   })
 
   channel.onDisconnect(() => {
@@ -122,14 +156,13 @@ server.listen(process.env.PORT || 4444, () => {
 
 function interpolate(positions) {
   const len = positions.length
-
   if (len < 30) {
-    // If there are not enough positions to interpolate, return the last position or a default position
     return positions[len - 1]
   }
-
   const lastPosition = positions[len - 1]
   const secondLastPosition = positions[len - 2]
-
-  return [(lastPosition[0] + secondLastPosition[0]) / 2, (lastPosition[1] + secondLastPosition[1]) / 2, (lastPosition[2] + secondLastPosition[2]) / 2]
+  for (let i = 0; i < lastPosition.length; i++) {
+    lastPosition[i] = (lastPosition[i] + secondLastPosition[i]) / 2
+  }
+  return lastPosition
 }
