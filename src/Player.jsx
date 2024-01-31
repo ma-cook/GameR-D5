@@ -79,15 +79,15 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
 
   function emitMoveEvent() {
     clearTimeout(moveTimeoutId)
+
     moveTimeoutId = setTimeout(() => {
       playerData.id = geckosClient.current.id
       playerData.position = newPosition.current
       playerData.rotation = group.current.rotation.toArray()
       playerData.torsoRotation = secondGroup.current.rotation.toArray()
       playerData.time = Date.now()
-
       channel.emit('move', playerData)
-    }, 300) // 200ms debounce time
+    }, 300) // 400ms debounce time
   }
   function updateRaycaster(raycaster, camera) {
     raycaster.setFromCamera({ x: 0, y: 0 }, camera)
@@ -112,9 +112,8 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
       },
       material: 'slippery',
       linearDamping: 0,
-      position: position,
-      allowSleep: true,
-      fixedRotation: true
+      position: [0, 0, 0],
+      allowSleep: true
     }),
     useRef()
   )
@@ -122,6 +121,7 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
   const updateSecondGroupQuaternion = useCallback(() => {
     euler.set(pitch.rotation.x, yaw.rotation.y, 0, 'YZX')
     gaze.setFromEuler(euler)
+
     secondGroup.current.setRotationFromQuaternion(gaze)
   }, [pitch.rotation.x, yaw.rotation.y, secondGroup.current])
 
@@ -153,17 +153,20 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
   }, [id, geckosClient])
 
   const handleFrame = ({ raycaster, camera }, delta) => {
-    newPositionVector.set(...position)
-    body.position.copy(newPositionVector)
-    body.position.subscribe((bodyPosition) => {
-      newPosition.current = bodyPosition
-    })
-    updateRaycaster(raycaster, camera)
-    updateLasersPosition(lasers, group, laserGroup, delta, channel)
-    handleLaserFiring()
-    handleIntersections(raycaster, camera)
-    handlePlayerMovement(delta, raycaster)
-    handleLocalPlayer(camera)
+    if (geckosClient.current) {
+      newPositionVector.set(...position)
+      body.position.copy(newPositionVector)
+      body.position.subscribe((bodyPosition) => {
+        newPosition.current = bodyPosition
+      })
+
+      updateRaycaster(raycaster, camera)
+      updateLasersPosition(lasers, group, laserGroup, delta, channel)
+      handleLaserFiring()
+      handleIntersections(raycaster, camera)
+      handlePlayerMovement(delta, raycaster)
+      handleLocalPlayer(camera)
+    }
   }
 
   useFrame(handleFrame)
@@ -179,14 +182,20 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
   }
 
   function handleIntersections(raycaster, camera) {
-    const intersects = raycaster.intersectObjects(Object.values(groundObjects), false)
-    if (intersects.length > 0) {
-      const intersection = intersects[0]
-      reticule.current.position.copy(intersection.point)
-    } else {
-      defaultPosition.set(0, 0, -50)
-      defaultPosition.applyMatrix4(camera.matrixWorld)
-      reticule.current.position.lerp(defaultPosition, 0.6)
+    if (raycaster && camera) {
+      const intersects = raycaster.intersectObjects(Object.values(groundObjects), false)
+      if (intersects.length > 0) {
+        const intersection = intersects[0]
+        // Ensure reticule.current and intersection are defined before accessing their properties
+        if (reticule.current && intersection) {
+          reticule.current.position.copy(intersection.point)
+        }
+      } else if (reticule.current) {
+        // Also check here for reticule.current before accessing its properties
+        defaultPosition.set(0, 0, -50)
+        defaultPosition.applyMatrix4(camera.matrixWorld)
+        reticule.current.position.lerp(defaultPosition, 0.6)
+      }
     }
   }
 
@@ -208,12 +217,19 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
     return raycaster.intersectObjects(Object.values(groundObjects), false).some((i) => i.distance < 0.028)
   }
 
+  const keyToVelocity = {
+    KeyW: -100,
+    KeyS: 100,
+    KeyA: -100,
+    KeyD: 100
+  }
+
   function handleGroundedPlayerMovement(delta) {
     ;['KeyW', 'KeyS', 'KeyA', 'KeyD'].forEach((key) => {
       if (keyboard[key]?.pressed) {
         activeAction = 1
-        inputVelocity.z = key === 'KeyW' || key === 'KeyS' ? (key === 'KeyW' ? -100 : 100) * delta : inputVelocity.z
-        inputVelocity.x = key === 'KeyA' || key === 'KeyD' ? (key === 'KeyA' ? -100 : 100) * delta : inputVelocity.x
+        inputVelocity.z = key === 'KeyW' || key === 'KeyS' ? keyToVelocity[key] * delta : inputVelocity.z
+        inputVelocity.x = key === 'KeyA' || key === 'KeyD' ? keyToVelocity[key] * delta : inputVelocity.x
         inputHistory.current.push({ input: key, time: keyboard[key].time })
       }
     })
@@ -248,9 +264,13 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
       pivotObject.position.y += 1.5
       pivotObject.rotation.copy(secondGroup.current.rotation)
       clearTimeout(moveTimeoutId)
+
       group.current.position.lerp(worldPosition, 0.9)
+
       secondGroup.current.position.copy(group.current.position)
+
       newPositionVector.fromArray(newPosition.current)
+
       emitMoveEvent()
     }
   }
@@ -259,9 +279,7 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
     <group ref={containerGroup}>
       {/* First Eve component */}
       <group ref={(groupRef) => (group.current = groupRef)} position={[newPosition.current[0], newPosition.current[1], newPosition.current[2]]} rotation={rotation}>
-        <Suspense fallback={null}>
-          <Eve />
-        </Suspense>
+        <Eve />
       </group>
 
       {/* Second Eve component */}
@@ -269,9 +287,7 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
         ref={(secondGroupRef) => (secondGroup.current = secondGroupRef)}
         position={[newPosition.current[0], newPosition.current[1], newPosition.current[2]]}
         rotation={torsoRotation}>
-        <Suspense fallback={null}>
-          <Torso />
-        </Suspense>
+        <Torso />
       </group>
 
       <group ref={laserGroup}></group>

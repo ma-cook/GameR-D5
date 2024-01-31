@@ -144,9 +144,8 @@ io.onConnection((channel) => {
     console.log(`User ${channel.id} disconnected`)
 
     //Delete this client from the object
-    delete gameState[channel.id]
 
-    io.emit('move', clients)
+    io.emit('gameState', gameState)
   })
 })
 

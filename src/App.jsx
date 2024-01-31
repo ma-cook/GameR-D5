@@ -68,7 +68,6 @@ export default function App() {
             <Physics>
               <Game gameState={gameState} geckosClient={geckosClient} />
             </Physics>
-            <gridHelper />
             <Stats />
           </Suspense>
         </Canvas>
@@ -77,10 +76,6 @@ export default function App() {
           <br />
           SPACE to jump.
           <br />
-          Model from{' '}
-          <a href="https://www.mixamo.com" target="_blank" rel="nofollow noreferrer">
-            Mixamo
-          </a>
         </div>
       </>
     )

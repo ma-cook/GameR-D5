@@ -24,16 +24,18 @@ function Game({ gameState, geckosClient }) {
         const { id, position, rotation, torsoRotation, reticulePosition } = clientData
 
         return (
-          <Player
-            id={id}
-            key={id}
-            position={position}
-            rotation={rotation}
-            channel={channel}
-            torsoRotation={torsoRotation}
-            reticulePosition={reticulePosition}
-            geckosClient={geckosClient}
-          />
+          geckosClient.current && (
+            <Player
+              id={id}
+              key={id}
+              position={position}
+              rotation={rotation}
+              channel={channel}
+              torsoRotation={torsoRotation}
+              reticulePosition={reticulePosition}
+              geckosClient={geckosClient}
+            />
+          )
         )
       })}
     </>

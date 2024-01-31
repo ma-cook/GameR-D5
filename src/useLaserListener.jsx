@@ -32,5 +32,27 @@ export function useLaserListener(channel, laserGroup, lasers) {
         }
       }
     })
+
+    const checkLaserDistance = () => {
+      lasers.forEach((laser) => {
+        if (laser.position.length() > 100) {
+          // If the laser is more than 150 units away from the center, emit a 'removeLaser' event
+          channel.emit('removeLaser', { id: laser.id })
+
+          // Remove the laser from the scene and the state
+          laserGroup.current.remove(laser)
+          const index = lasers.indexOf(laser)
+          if (index !== -1) {
+            lasers.splice(index, 1)
+          }
+        }
+      })
+
+      // Check the laser distance again on the next frame
+      requestAnimationFrame(checkLaserDistance)
+    }
+
+    // Start checking the laser distance
+    checkLaserDistance()
   }, [channel, laserGroup, lasers, laserGeometry, laserMaterial]) // Add laserGeometry and laserMaterial to the dependency array
 }
