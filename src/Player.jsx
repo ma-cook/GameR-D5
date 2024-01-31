@@ -112,8 +112,9 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
       },
       material: 'slippery',
       linearDamping: 0,
-      position: [0, 0, 0],
-      allowSleep: true
+      position: position,
+      allowSleep: true,
+      restitution: 0.0
     }),
     useRef()
   )
@@ -243,13 +244,13 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
   }
 
   function handleJumpAction() {
-    if (keyboard['Space']?.pressed) {
+    if (keyboard['Space']?.pressed && !inJumpAction.current) {
       activeAction = 2
       inJumpAction.current = true
       actions['jump']
       inputVelocity.y = 6
       inputHistory.current.push({ input: 'Space', time: keyboard['Space'].time })
-    } else if (!keyboard['Space']?.pressed && inJumpAction.current && playerGrounded.current) {
+    } else if (!keyboard['Space']?.pressed && inJumpAction.current) {
       inJumpAction.current = false
     }
   }
