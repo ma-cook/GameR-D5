@@ -8,8 +8,12 @@ export function createLaser(secondGroup, laserGroup, lasers, channel, geckosClie
       position: [secondGroup.current.position.x, secondGroup.current.position.y + 1, secondGroup.current.position.z],
       quaternion: secondGroup.current.quaternion.toArray()
     }
-    channel.emit('laser', laserData)
-  }
 
-  // Emit the laser data
+    // Convert the laser data to a Uint8Array
+    const encoder = new TextEncoder()
+    const uint8Array = encoder.encode(JSON.stringify(laserData))
+
+    // Emit the laser data as binary
+    channel.emit('laser', uint8Array)
+  }
 }

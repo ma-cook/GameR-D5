@@ -54,6 +54,16 @@ let gameState = {}
 let gameStatesHistory = []
 let lasers = {}
 
+function getChanges(pastGameState, playerData) {
+  let changes = {}
+  for (let key in playerData) {
+    if (pastGameState[key] !== playerData[key]) {
+      changes[key] = playerData[key]
+    }
+  }
+  return changes
+}
+
 // Socket app msgs
 io.onConnection((channel) => {
   console.log(`User ${channel.id} connected`)
@@ -66,45 +76,58 @@ io.onConnection((channel) => {
     torsoRotation: [0, 0, 0]
   }
 
-  io.emit('gameState', gameState) // Emit the 'gameState' event with the clients object
   let lastMoveTime = 0
-  channel.on('move', (playerData) => {
-    const now = Date.now()
-    if (now - lastMoveTime < 300) {
-      // Limit to 10 moves per second
-      const { id, position, rotation, torsoRotation, time } = playerData
+  channel.on('move', (playerDataArray) => {
+    try {
+      // Convert the Buffer to a Uint8Array
 
-      // Find the game state at the time the action was performed
-      const pastGameState = gameStatesHistory.find((state) => state.time === time)
+      const uint8Array = Uint8Array.from(Object.values(playerDataArray))
 
-      if (pastGameState) {
-        // Resolve the action in the past game state
-        const pastPlayerState = pastGameState[id]
-        if (pastPlayerState) {
-          const changes = getChanges(pastGameState, playerData)
-          gameState[id] = applyChanges(gameState[id], changes)
-        } else {
-          // If this is a lag compensation event, update the player's position with the past game state
-          pastPlayerState.position = position
-          pastPlayerState.rotation = rotation
-          pastPlayerState.torsoRotation = torsoRotation
+      // Decode the Uint8Array back to a string
+      const dataString = new TextDecoder().decode(uint8Array)
+
+      // Parse the string back into a JavaScript object
+      const playerData = JSON.parse(dataString)
+
+      const now = Date.now()
+      if (now - lastMoveTime < 300) {
+        // Limit to 10 moves per second
+        const { id, position, rotation, torsoRotation, time } = playerData
+
+        // Find the game state at the time the action was performed
+        const pastGameState = gameStatesHistory.find((state) => state.time === time)
+
+        if (pastGameState) {
+          // Resolve the action in the past game state
+          const pastPlayerState = pastGameState[id]
+          if (pastPlayerState) {
+            const changes = getChanges(pastGameState, playerData)
+            gameState[id] = applyChanges(gameState[id], changes)
+          } else {
+            // If this is a lag compensation event, update the player's position with the past game state
+            pastPlayerState.position = position
+            pastPlayerState.rotation = rotation
+            pastPlayerState.torsoRotation = torsoRotation
+          }
         }
-      }
 
-      // If this is a normal 'move' event, update the player's position as usual
-      if (gameState[id]) {
-        gameState[id].position = position
-        gameState[id].rotation = rotation
-        gameState[id].torsoRotation = torsoRotation
+        // If this is a normal 'move' event, update the player's position as usual
+        if (gameState[id]) {
+          gameState[id].position = position
+          gameState[id].rotation = rotation
+          gameState[id].torsoRotation = torsoRotation
+        }
+        return
       }
-      return
+      lastMoveTime = now
+    } catch (error) {
+      console.error('An error occurred:', error)
     }
-    lastMoveTime = now
   })
 
   setInterval(() => {
     gameStatesHistory.push(JSON.parse(JSON.stringify(gameState)))
-    if (gameStatesHistory.length > 30) {
+    if (gameStatesHistory.length > 10) {
       gameStatesHistory.shift()
     }
     for (const id in playerPositions) {
@@ -127,17 +150,50 @@ io.onConnection((channel) => {
       }
     }
 
-    io.emit('gameState', gameState) // Emit to all connected clients
-  }, 30 / 30)
+    // Convert gameState to a Buffer and emit
+    const gameStateBuffer = Buffer.from(JSON.stringify(gameState))
 
-  channel.on('laser', (laserData) => {
-    lasers[laserData.id] = laserData
-    io.emit('laser', laserData)
+    io.emit('gameState', gameStateBuffer) // Emit to all connected clients
+  }, 1000 / 1000)
+
+  channel.on('laser', (data) => {
+    try {
+      // Convert the data object back to a Uint8Array
+      const uint8Array = Uint8Array.from(Object.values(data))
+
+      // Convert the Uint8Array back to a string
+      const dataString = new TextDecoder().decode(uint8Array)
+
+      // Parse the string back into a JavaScript object
+      const laserData = JSON.parse(dataString)
+
+      lasers[laserData.id] = laserData
+
+      // Convert the laser data to a Buffer (for Node.js environment)
+      const buffer = Buffer.from(JSON.stringify(laserData))
+
+      // Broadcast the laser data to all connected clients
+      io.emit('laser', buffer)
+    } catch (error) {
+      console.error('An error occurred:', error)
+    }
   })
 
   channel.on('removeLaser', (laserId) => {
+    const uint8Array = Uint8Array.from(Object.values(laserId))
+
+    // Convert the Uint8Array back to a string
+    const dataString = new TextDecoder().decode(uint8Array)
+
+    // Parse the string back into a JavaScript object
+    const laserIdData = JSON.parse(dataString)
+
+    lasers[laserIdData.id] = laserIdData
+
+    // Convert the laser data to a Buffer (for Node.js environment)
+    const laserIdBuffer = Buffer.from(JSON.stringify(laserIdData))
     delete lasers[laserId]
-    io.emit('removeLaser', laserId)
+    io.emit('removeLaser', laserIdBuffer)
   })
 
   channel.onDisconnect(() => {
@@ -155,7 +211,7 @@ server.listen(process.env.PORT || 4444, () => {
 
 function interpolate(positions) {
   const len = positions.length
-  if (len < 30) {
+  if (len < 2) {
     return positions[len - 1]
   }
   const lastPosition = positions[len - 1]

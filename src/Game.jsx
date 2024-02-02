@@ -1,10 +1,10 @@
-import { Debug, useContactMaterial } from '@react-three/cannon'
-import Floor from './Floor'
-import Obstacles from './Obstacles'
+import { useContactMaterial } from '@react-three/cannon'
+import { throttle } from 'lodash'
 import Player from './Player'
-import { useControls } from 'leva'
-import Box from './Box'
-import React, { useState, useEffect, useRef } from 'react'
+
+import React, { useMemo } from 'react'
+
+const MemoizedPlayer = React.memo(Player)
 
 function Game({ gameState, geckosClient }) {
   useContactMaterial('ground', 'slippery', {
@@ -14,18 +14,16 @@ function Game({ gameState, geckosClient }) {
     contactEquationRelaxation: 3
   })
 
-  const channel = geckosClient.current
-
+  const channel = useMemo(() => geckosClient.current, [geckosClient])
+  const throttledGameState = useMemo(() => throttle(() => gameState, 0.5), [gameState])
   return (
     <>
-      <Floor />
-      <Box />
-      {Object.values(gameState).map((clientData) => {
+      {Object.values(throttledGameState()).map((clientData) => {
         const { id, position, rotation, torsoRotation, reticulePosition } = clientData
 
         return (
           geckosClient.current && (
-            <Player
+            <MemoizedPlayer
               id={id}
               key={id}
               position={position}

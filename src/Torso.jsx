@@ -1,7 +1,5 @@
 import { useRef } from 'react'
-import { useGLTF } from '@react-three/drei'
-import { useEffect } from 'react'
-import { useStore } from './App'
+
 import React from 'react'
 
 export default function Torso() {

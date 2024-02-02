@@ -5,8 +5,11 @@ import { Physics, Debug } from '@react-three/cannon'
 import { Suspense } from 'react'
 import { create } from 'zustand'
 import { AnimationMixer } from 'three'
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useMemo, useState, useEffect, useRef } from 'react'
 import geckos from '@geckos.io/client'
+import Box from './Box'
+import Floor from './Floor'
+import { throttle } from 'lodash'
 
 import './App.css'
 
@@ -35,6 +38,7 @@ export default function App() {
   const geckosClient = useRef(null)
   const cameraRef = useRef()
   const [gameState, setClients] = useState({})
+  const throttledSetClients = useMemo(() => throttle(setClients, 0.5), [])
   useEffect(() => {
     // On mount initialize the geckos connection
     if (!geckosClient.current) {
@@ -43,11 +47,18 @@ export default function App() {
         console.log('Connected to server')
       })
 
-      geckosClient.current.on('gameState', (newGameState) => {
-        if (JSON.stringify(newGameState) !== JSON.stringify(gameState)) {
-          setClients(newGameState)
-        }
-      })
+      geckosClient.current.on(
+        'gameState',
+        (gameStateBuffer) => {
+          const data = gameStateBuffer.data
+          const string = String.fromCharCode.apply(null, data)
+          const newGameState = JSON.parse(string)
+          if (JSON.stringify(newGameState) !== JSON.stringify(gameState)) {
+            throttledSetClients(newGameState)
+          }
+        },
+        [throttledSetClients]
+      )
     }
 
     // Dispose gracefully
@@ -66,6 +77,9 @@ export default function App() {
             <ambientLight />
 
             <Physics>
+              <Floor />
+              <Box />
+
               <Game gameState={gameState} geckosClient={geckosClient} />
             </Physics>
             <Stats />

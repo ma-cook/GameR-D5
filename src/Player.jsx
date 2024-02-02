@@ -60,7 +60,10 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
   const currentPosition = new Vector3()
   const gaze = new THREE.Quaternion()
 
-  const playerShapes = [{ args: [0.35], position: [0, 0.35, 0], type: 'Sphere' }]
+  const playerShapes = [
+    { args: [0.1], position: [0, 0.1, 0], type: 'Sphere' },
+    { args: [0.5, 0.5, 0.5], position: [0, 0.25, 0], type: 'Box' }
+  ]
 
   const playerData = {
     id: null,
@@ -81,13 +84,22 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
     clearTimeout(moveTimeoutId)
 
     moveTimeoutId = setTimeout(() => {
-      playerData.id = geckosClient.current.id
-      playerData.position = newPosition.current
-      playerData.rotation = group.current.rotation.toArray()
-      playerData.torsoRotation = secondGroup.current.rotation.toArray()
-      playerData.time = Date.now()
-      channel.emit('move', playerData)
-    }, 300) // 400ms debounce time
+      if (group.current) {
+        playerData.id = geckosClient.current.id
+        playerData.position = newPosition.current
+        playerData.rotation = group.current.rotation.toArray()
+        playerData.torsoRotation = secondGroup.current.rotation.toArray()
+        playerData.time = Date.now()
+      }
+      // Convert the data to a string
+      const dataString = JSON.stringify(playerData)
+
+      // Encode the string to a Uint8Array
+      const playerDataArray = new TextEncoder().encode(dataString)
+      if (channel) {
+        channel.emit('move', playerDataArray)
+      }
+    }, 1) // 400ms debounce time
   }
   function updateRaycaster(raycaster, camera) {
     raycaster.setFromCamera({ x: 0, y: 0 }, camera)
@@ -111,13 +123,28 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
         }
       },
       material: 'slippery',
-      linearDamping: 0,
+      linearDamping: 10,
       position: position,
-      allowSleep: true,
+
       fixedRotation: true
     }),
     useRef()
   )
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      if (body.current) {
+        const velocity = body.current.velocity
+        if (Math.abs(velocity.x) < 0.01 && Math.abs(velocity.y) < 0.01 && Math.abs(velocity.z) < 0.01) {
+          body.current.setLinearVelocity({ x: 0, y: 0, z: 0 })
+        }
+      }
+    }, 1) // 1/200th of a second is 5 milliseconds
+
+    return () => {
+      clearInterval(intervalId)
+    }
+  }, [body])
 
   const updateSecondGroupQuaternion = useCallback(() => {
     euler.set(pitch.rotation.x, yaw.rotation.y, 0, 'YZX')
@@ -148,19 +175,15 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
   }
 
   useEffect(() => {
-    if (geckosClient.current) {
-      geckosClient.current.on('gameState', handleGameState)
-    }
+    geckosClient.current.on('gameState', handleGameState)
   }, [id, geckosClient])
 
   const handleFrame = ({ raycaster, camera }, delta) => {
     if (geckosClient.current) {
-      newPositionVector.set(...position)
-      body.position.copy(newPositionVector)
+      newPositionVector.set(position)
       body.position.subscribe((bodyPosition) => {
         newPosition.current = bodyPosition
       })
-
       updateRaycaster(raycaster, camera)
       updateLasersPosition(lasers, group, laserGroup, delta, channel)
       handleLaserFiring()
@@ -240,6 +263,7 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
     quat.setFromEuler(euler)
     inputVelocity.applyQuaternion(quat)
     velocity.set(inputVelocity.x, inputVelocity.y, inputVelocity.z)
+    //SEND TO SERVER First!!!! (MOVE EVENT)
     body.applyImpulse([velocity.x, velocity.y, velocity.z], [0, 0, 0])
   }
 
@@ -261,7 +285,7 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
         updateSecondGroupQuaternion()
       }
       pivotObject.add(camera)
-      pivotObject.position.copy(newPositionVector)
+      pivotObject.position.copy(secondGroup.current.position)
       pivotObject.position.y += 1.5
       pivotObject.rotation.copy(secondGroup.current.rotation)
       clearTimeout(moveTimeoutId)
