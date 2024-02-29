@@ -299,7 +299,7 @@ const Player = ({ id, position, rotation, channel, torsoRotation, geckosClient }
       emitMoveEvent()
     }
   }
-
+  //test
   return (
     <group ref={containerGroup}>
       {/* First Eve component */}
